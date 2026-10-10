@@ -100,6 +100,23 @@ PYTHONPATH=src python3 src/omprog.py \
     --dlq-path /var/log/rsyslogstach/dlq.jsonl
 ```
 
+### Rotation de la DLQ (issue #27)
+
+`LocalDeadLetterQueue` sait rotater et purger son fichier JSONL ; tout est
+désactivé par défaut (un seul fichier qui grandit, comme avant).
+
+| Paramètre (`dlq.py`) | Option prévue (`omprog.py`) | Effet |
+|---|---|---|
+| `max_bytes` | `--dlq-max-size 100M` (`parse_size`) | Rotation avant qu'une écriture dépasse cette taille |
+| `max_age` | `--dlq-max-age 7d` (`parse_duration`) | Rotation quand la plus ancienne entrée dépasse cet âge |
+| `backups` | `--dlq-backups 10` | Fichiers rotatés conservés au maximum |
+| `retention` | `--dlq-retention 30d` (`parse_duration`) | Âge maximal d'un fichier rotaté |
+| `compress` | `--dlq-no-compress` | Fichiers rotatés en gzip (défaut) |
+
+Fichiers rotatés : `dlq.jsonl.20261010T120000Z.gz` (puis `-1`, `-2`... dans
+la même seconde), relisibles avec `zcat`. Le câblage des options dans
+`omprog.py` attend l'import de ce module (#25/#40).
+
 ### Authentification OpenSearch
 
 ```bash
