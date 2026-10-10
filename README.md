@@ -87,6 +87,8 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 ### Index OpenSearch
 
 Template : `opensearch-index-template.json` (index pattern `switch-logs-*`).
+Origine et type de chaque champ, exemples de requêtes :
+[docs/opensearch-index-schema.md](docs/opensearch-index-schema.md).
 
 ## Utilisation
 
