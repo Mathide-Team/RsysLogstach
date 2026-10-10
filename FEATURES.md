@@ -37,6 +37,7 @@
 - Uniquement pour erreurs permanentes (RequestError/NotFoundError, 400/404)
 - Jamais pour erreurs transitoires (retenue inchangée)
 - Écriture dans thread séparé (`asyncio.to_thread`)
+- Rotation par taille (`max_bytes`) ou par âge de la plus ancienne entrée (`max_age`), compression gzip, purge par nombre (`backups`) et par âge (`retention`), `parse_size`/`parse_duration` pour les options CLI (issue #27)
 
 ### Fingerprint (module fingerprint.py, session 17)
 - `compute_fingerprint()` — sha256/sha1/md5
@@ -59,8 +60,7 @@
 ## Limites connues
 
 ### DLQ (dlq.py)
-- Pas de rotation ni de purge automatique — relecture/réindexation manuelle
-- Voir issue #27
+- Rotation/purge disponibles dans `dlq.py` (issue #27) ; options `--dlq-*` à câbler dans `omprog.py` une fois le module importé (#25/#40)
 
 ### Fingerprint (fingerprint.py)
 - Pas de mode HMAC (nécessiterait une clé secrète)
@@ -81,7 +81,7 @@
 |------|----------|-------|
 | Pousser les modules manquants | P0 | #25 |
 | Écrire le README | P1 | #26 |
-| DLQ rotation/purge | P3 | #27 |
+| DLQ rotation/purge — options CLI dans omprog.py | P3 | #27 |
 | Fingerprint HMAC/MURMUR3 | P3 | #28 |
 | Templates null vs absent | P2 | #29 |
 | Test d'intégration bout en bout | P2 | #30 |
