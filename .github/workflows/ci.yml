@@ -34,11 +34,6 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Tests (pytest)
-        # L'import initial du projet n'est complet qu'à 1/6 (fichiers de
-        # config + petits modules) : src/templates.py, référencé par
-        # src/fingerprint.py, n'est pas encore poussé et tests/
-        # test_fingerprint.py ne peut donc pas être collecté. Il sera
-        # réintégré sans --ignore dès que les parties 2/6 à 6/6 seront
-        # importées — voir l'issue de suivi « Importer les modules
-        # manquants (2/6 → 6/6) ».
-        run: uv run pytest -q --ignore=tests/test_fingerprint.py
+        # Suite complète, sans exclusion : src/templates.py (reconstruit,
+        # issue #40) permet de collecter tests/test_fingerprint.py.
+        run: uv run pytest -q
