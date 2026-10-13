@@ -102,12 +102,40 @@ PYTHONPATH=src python3 src/omprog.py \
     --dlq-path /var/log/rsyslogstach/dlq.jsonl
 ```
 
+### Protocole omprog
+
+Avec `confirmMessages="on"`, `omprog.py` écrit `OK` sur stdout quand il est
+prêt, puis une ligne par message :
+
+| Cas | Réponse | Effet côté rsyslog |
+|---|---|---|
+| Indexé | `OK` | Message confirmé |
+| Abandonné par un filtre `drop`, ou aucune branche `output{}` ne correspond | `OK` | Message confirmé, non indexé |
+| Échec permanent (400/404) avec `--dlq-path` | `OK` | Message écrit dans la DLQ |
+| JSON invalide | `OK` | Écrit dans la DLQ si elle est configurée, sinon seulement journalisé |
+| Échec transitoire (nœud injoignable, timeout), ou échec permanent sans DLQ | `Erreur : ...` | Action suspendue, message renvoyé plus tard |
+
+Les journaux vont sur stderr (`--log-level`, `INFO` par défaut) : stdout est
+réservé au protocole. Fin de stdin ou SIGTERM : arrêt propre.
+
+Autres options : `--enrich-key-field` / `--enrich-out-field` (`hostname` /
+`enrichment` par défaut), `--geoip-db` (avec `--geoip-ip-field`,
+`fromhost-ip` par défaut), `--index-pattern` (`switch-logs-%Y.%m.%d`),
+`--index-template-name` (`switch-logs`), `--document-id-template`,
+`--document-id-fingerprint` (champs séparés par des virgules, ou `*`),
+`--filters-on-missing` / `--pipeline-on-missing`, `--no-verify-certs`.
+`--pipeline-conf` accepte un fichier ou un dossier, dont les `*.conf` sont lus
+par ordre de nom comme le fait Logstash. Seules les sorties `opensearch` et
+`elasticsearch` d'un pipeline sont honorées (`index`, `document_id`), et
+toujours vers les nœuds de `--opensearch-host`.
+`PYTHONPATH=src python3 src/omprog.py --help` donne la liste complète.
+
 ### Rotation de la DLQ (issue #27)
 
 `LocalDeadLetterQueue` sait rotater et purger son fichier JSONL ; tout est
 désactivé par défaut (un seul fichier qui grandit, comme avant).
 
-| Paramètre (`dlq.py`) | Option prévue (`omprog.py`) | Effet |
+| Paramètre (`dlq.py`) | Option (`omprog.py`) | Effet |
 |---|---|---|
 | `max_bytes` | `--dlq-max-size 100M` (`parse_size`) | Rotation avant qu'une écriture dépasse cette taille |
 | `max_age` | `--dlq-max-age 7d` (`parse_duration`) | Rotation quand la plus ancienne entrée dépasse cet âge |
@@ -116,8 +144,7 @@ désactivé par défaut (un seul fichier qui grandit, comme avant).
 | `compress` | `--dlq-no-compress` | Fichiers rotatés en gzip (défaut) |
 
 Fichiers rotatés : `dlq.jsonl.20261010T120000Z.gz` (puis `-1`, `-2`... dans
-la même seconde), relisibles avec `zcat`. Le câblage des options dans
-`omprog.py` attend l'import de ce module (#25/#40).
+la même seconde), relisibles avec `zcat`.
 
 ### Authentification OpenSearch
 

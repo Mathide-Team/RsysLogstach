@@ -60,7 +60,7 @@
 ## Limites connues
 
 ### DLQ (dlq.py)
-- Rotation/purge disponibles dans `dlq.py` (issue #27) ; options `--dlq-*` à câbler dans `omprog.py` une fois le module importé (#25/#40)
+- Rotation/purge : options `--dlq-max-size`, `--dlq-max-age`, `--dlq-backups`, `--dlq-retention`, `--dlq-no-compress` de `omprog.py` (issue #27)
 
 ### Fingerprint (fingerprint.py)
 - Pas de mode HMAC (nécessiterait une clé secrète)
@@ -72,6 +72,11 @@
 - Champ `null` traité comme absent (se rend en chaîne vide)
 - Voir issue #29
 
+### Point d'entrée (omprog.py)
+- Reconstruit en 2026 (issue #40) : le fichier d'origine n'a pas été retrouvé
+- Sorties `output{}` honorées : `opensearch` et `elasticsearch` (`index`, `document_id`) ; `hosts` du pipeline ignoré (nœuds de `--opensearch-host`)
+- `${VAR}` des pipelines `.conf` non substitués (variables d'environnement Logstash)
+
 ### Indexer (indexer.py)
 - Réponse du serveur aux redirections (imprimante/série/parallèle) traitée côté serveur, jamais remontée à l'API
 
@@ -81,7 +86,6 @@
 |------|----------|-------|
 | Pousser les modules manquants | P0 | #25 |
 | Écrire le README | P1 | #26 |
-| DLQ rotation/purge — options CLI dans omprog.py | P3 | #27 |
 | Fingerprint HMAC/MURMUR3 | P3 | #28 |
 | Templates null vs absent | P2 | #29 |
 | Test d'intégration bout en bout | P2 | #30 |
