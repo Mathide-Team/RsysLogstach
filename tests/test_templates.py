@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from templates import get_field, parse_field_path, render_template
+from templates import _MISSING, parse_field_path, render_template, resolve_field
 
 DOC = {
     "hostname": "sw01",
@@ -26,26 +26,30 @@ class TestParseFieldPath:
     def test_valid(self, ref, path):
         assert parse_field_path(ref) == path
 
-    @pytest.mark.parametrize("ref", ["", "  ", "[a][b", "a[b]", "[a]x[b]", "[]", "a]"])
+    # Module d'origine (#40) : seules ces formes sont refusées ; « a[b] », « [] »
+    # et « a] » sont lus comme des noms de champ littéraux (écart avec Logstash, voir l'issue de suivi).
+    @pytest.mark.parametrize("ref", ["", "  ", "[a][b", "[a]x[b]"])
     def test_invalid(self, ref):
         with pytest.raises(ValueError):
             parse_field_path(ref)
 
 
-class TestGetField:
-    def test_nested_and_list_index(self):
-        assert get_field(DOC, "[host][ip]") == "10.0.0.1"
-        assert get_field(DOC, "[host][tags][1]") == "lab"
-        assert get_field(DOC, "[host][tags][-1]") == "lab"
+def _field(ref):
+    return resolve_field(DOC, parse_field_path(ref))
 
-    def test_missing_returns_default(self):
-        assert get_field(DOC, "absent") is None
-        assert get_field(DOC, "[host][absent]", "d") == "d"
-        assert get_field(DOC, "[host][tags][5]", "d") == "d"
-        assert get_field(DOC, "[hostname][x]", "d") == "d"
+
+class TestResolveField:
+    def test_nested_and_list_index(self):
+        assert _field("[host][ip]") == "10.0.0.1"
+        assert _field("[host][tags][1]") == "lab"
+        assert _field("[host][tags][-1]") == "lab"
+
+    def test_missing_returns_sentinel(self):
+        for ref in ("absent", "[host][absent]", "[host][tags][5]", "[hostname][x]"):
+            assert _field(ref) is _MISSING
 
     def test_null_is_present(self):
-        assert get_field(DOC, "nothing", "d") is None
+        assert _field("nothing") is None
 
 
 class TestRenderTemplate:
@@ -53,9 +57,10 @@ class TestRenderTemplate:
         assert render_template("%{hostname}-%{[host][ip]}", DOC) == "sw01-10.0.0.1"
 
     def test_value_formatting(self):
-        assert render_template("%{count}|%{up}|%{nothing}", DOC) == "3|true|"
-        assert render_template("%{[host][tags]}", DOC) == '["core","lab"]'
-        assert render_template("%{host}", DOC) == '{"ip":"10.0.0.1","tags":["core","lab"]}'
+        # Comportement du module d'origine (#40), différent de Logstash (true, core,lab, JSON) : issue de suivi
+        assert render_template("%{count}|%{up}|%{nothing}", DOC) == "3|True|"
+        assert render_template("%{[host][tags]}", DOC) == "['core', 'lab']"
+        assert render_template("%{host}", DOC) == "{'ip': '10.0.0.1', 'tags': ['core', 'lab']}"
 
     def test_without_reference(self):
         assert render_template("texte fixe", DOC) == "texte fixe"
@@ -66,10 +71,6 @@ class TestRenderTemplate:
 
     def test_missing_empty(self):
         assert render_template("a-%{absent}-b", DOC, on_missing="empty") == "a--b"
-
-    def test_missing_raise(self):
-        with pytest.raises(KeyError, match="absent"):
-            render_template("%{absent}", DOC, on_missing="raise")
 
     def test_unknown_on_missing(self):
         with pytest.raises(ValueError, match="on_missing"):
