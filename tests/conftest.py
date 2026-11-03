@@ -16,6 +16,8 @@ from pathlib import Path
 # langue de la machine : fixée ici, avant tout import de module de src/.
 os.environ["LANGUAGE"] = "fr_FR"
 os.environ.pop("RSYSLOGSTACH_LOCALEDIR", None)
+# Issue #121 : aucun test n'interroge un vrai serveur DNS (fichiers hosts seuls).
+os.environ["RSYSLOGSTACH_DNS"] = "off"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 

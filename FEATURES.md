@@ -26,7 +26,7 @@
 - Parsing des fichiers `.conf` via `logstash-pipeline-parser`
 - Exemples : `pipeline.example.d/10_input`, `25_filter`, `30_output`
 - tag_on_failure pour date et geoip (sessions 19, 22, 24)
-- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent` et `xml` (#121), plus le pont `filters_json`
+- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent`, `xml` et `dns` (#121), plus le pont `filters_json`
 
 ### Indexation OpenSearch (module indexer.py)
 - `OpenSearchIndexer` — indexation asynchrone (opensearch-py[async])
@@ -79,7 +79,7 @@
 - Rendu d'un champ `null` : chaîne vide — écart assumé avec Logstash 8, qui conserve le gabarit `%{champ}` littéral. **Fingerprint (#29, décision Mathilde)** : un champ `null` est distingué d'un champ absent — il compte comme présent (empreinte du contenu vide), `None` uniquement si tous les champs demandés sont absents
 
 ### Pipeline `.conf` (interpreter.py)
-- Plugins natifs non interprétés (structure seule, signalée en debug) : `dns`, `json`… Leur équivalent passe par `filters_json` quand il existe
+- Plugins natifs non interprétés (structure seule, signalée en debug) : `aggregate`, `ruby`… Leur équivalent passe par `filters_json` quand il existe
 - Décision #34, revue par #112 (`grok` natif livré) : à l'époque, `grok` n'était pas implémenté. Un step `regex` à groupes nommés (`(?P<champ>...)`) fait le même travail sans embarquer la bibliothèque de motifs grok. `dissect` (natif et JSON) et `translate` (natif et JSON) étaient déjà couverts. `date` est désormais disponible des deux côtés
 - Comme Logstash, un tableau à un seul élément dans une condition (`[level] in ["ERROR"]`) est une **référence de champ**, pas un tableau : écrire `[level] == "ERROR"` ou au moins deux éléments
 - `mutate convert` : une chaîne non numérique (« abc ») laisse le champ inchangé (Logstash/Ruby donnerait 0)

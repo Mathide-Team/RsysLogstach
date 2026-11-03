@@ -436,6 +436,15 @@ toml = [
 ]
 
 [[package]]
+name = "dnspython"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/91/21/7fcd6780f61e9756aafaea760560509bb4111375daa2e23c1be7a89f33f1/dnspython-2.9.1.tar.gz", hash = "sha256:9a6d30e55f8dc63e6052597666112bff0586b95a2474a9deda03afbbf820d37a", size = 455302, upload-time = "2026-10-29T18:05:12.156Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/61/55/f90405bbbbd3dd8f788e92cec2d39964f5c09783f0570fc35f3bb3381485/dnspython-2.9.1-py3-none-any.whl", hash = "sha256:7c81caf8de1ed57b8cfc7e0ad4f528a0b8ceace473c7eb946df195dc9def751f", size = 360364, upload-time = "2026-10-29T18:05:10.206Z" },
+]
+
+[[package]]
 name = "events"
 version = "0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1560,6 +1569,7 @@ name = "rsyslogstach"
 version = "0.9.0"
 source = { editable = "." }
 dependencies = [
+    { name = "dnspython" },
     { name = "geoip2" },
     { name = "logstash-pipeline-parser" },
     { name = "loguru" },
@@ -1583,6 +1593,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "dnspython", specifier = "==2.9.1" },
     { name = "geoip2" },
     { name = "logstash-pipeline-parser", specifier = "==0.0.3" },
     { name = "loguru", specifier = ">=0.7" },
