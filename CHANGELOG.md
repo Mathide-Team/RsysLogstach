@@ -7,6 +7,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - CI et publication : repli GitHub autorisé, publication manuelle sur un tag
   déjà livré dans main, vérification d’ascendance et archives du tag exact.
 
+### Tests
+- **Couverture étendue à `scripts/`** (#154, suite de #73) : `source = ["src", "scripts"]`, tests de `check_branch_protection.py` (0 % → 100 %) et des points d'entrée des trois scripts. Seuil inchangé à 95 %.
 
 ### Corrigé
 - **Chaînes des `.conf`** (#128) : les antislashs entre guillemets sont conservés, comme Logstash (`config.support_escapes: false`) — `"a\.b"` vaut `a\.b` et `"\d+"` vaut `\d+`, au lieu d'être retirés par `logstash-pipeline-parser`. Les regex de `gsub` et des conditions `=~ "..."` redeviennent fidèles ; prérequis des motifs `grok` (#112).
