@@ -242,6 +242,7 @@ demande explicite ("ok python >3.11").
 from __future__ import annotations
 
 import json
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -323,6 +324,59 @@ def _conserver_antislashs() -> None:
 _conserver_antislashs()
 
 
+# `${VAR}` / `${VAR:défaut}` : nom de variable d'environnement (lettre ou
+# `_` puis lettres/chiffres/`_`) et, optionnellement, valeur par défaut
+# jusqu'à la première `}` fermante (pas d'accolade imbriquée, pas
+# d'échappement — Logstash n'en propose pas non plus).
+_VAR_ENV_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}")
+
+
+@traced
+def substituer_variables_environnement(source: str) -> str:
+    """Remplace les `${VAR}` et `${VAR:défaut}` d'un `.conf` (#122).
+
+    Comme Logstash, la substitution se fait au chargement du texte du
+    `.conf`, AVANT l'analyse : elle vaut donc aussi bien pour les valeurs
+    entre guillemets que pour le reste, et `%{champ}` (gabarit sprintf,
+    rendu par événement) n'est pas concerné — seul `${...}` est touché.
+
+    Sémantique du plugin officiel (documentation Elastic) : la variable
+    définie prime toujours sur la valeur par défaut ; `${VAR:défaut}` ne
+    sert que si `VAR` n'est pas dans l'environnement ; et une variable
+    non définie SANS valeur par défaut est une erreur de configuration —
+    `ValueError` qui nomme les variables fautives, plutôt qu'un pont
+    qui démarre avec des blocs silencieusement faux. Les occurrences au
+    nom invalide (`${1x}`, `${}`) sont laissées telles quelles : le
+    parseur les verra comme du texte ordinaire.
+
+    Args:
+        source: Texte complet du `.conf` (fichier ou dossier concaténé).
+
+    Returns:
+        Le texte substitué ; les valeurs substituées sont des chaînes,
+        le type attendu (nombre, booléen…) est rétabli par la
+        normalisation des options (`_coerce_literal`).
+    """
+    manquantes: list[str] = []
+
+    @traced
+    def _remplace(match: re.Match[str]) -> str:
+        nom, defaut = match.group(1), match.group(2)
+        valeur = os.environ.get(nom)
+        if valeur is None:
+            if defaut is None:
+                manquantes.append(nom)
+                return match.group(0)
+            return defaut
+        return valeur
+
+    resultat = _VAR_ENV_RE.sub(_remplace, source)
+    if manquantes:
+        noms = ", ".join(sorted(set(manquantes)))
+        raise ValueError(f".conf : variable(s) d'environnement non définie(s) sans valeur par défaut : {noms}")
+    return resultat
+
+
 @dataclass(frozen=True)
 class OutputAction:
     """Un plugin de sortie dont les conditions englobantes se sont toutes évaluées à vrai.
@@ -382,14 +436,20 @@ class PipelineInterpreter:
     def __init__(self, pipeline_source: str) -> None:
         """Parse le texte du pipeline.
 
+        Les `${VAR}` / `${VAR:défaut}` sont d'abord substitués
+        (`substituer_variables_environnement`, #122), comme Logstash au
+        chargement du `.conf`.
+
         Args:
             pipeline_source: Contenu d'un fichier `.conf` Logstash complet
                 (typiquement `input{}` optionnel, `filter{}`, `output{}`).
 
         Raises:
+            ValueError: Variable d'environnement non définie sans valeur
+                par défaut.
             logstash_pipeline_parser.tree.ParseError: Pipeline malformé.
         """
-        self._ast: list = Pipeline(pipeline_source).parse()
+        self._ast: list = Pipeline(substituer_variables_environnement(pipeline_source)).parse()
         self._dissect_cache: dict[str, Dissector] = {}
         # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
         self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}

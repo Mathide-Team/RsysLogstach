@@ -97,6 +97,11 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
 
+Variables d'environnement du `.conf` (#122) : `${VAR}` et `${VAR:défaut}` sont
+substitués au chargement, comme Logstash — la variable définie prime sur la
+valeur par défaut ; une variable non définie sans défaut refuse le démarrage
+(`ValueError` qui la nomme). `%{champ}` (rendu par événement) n'est pas
+concerné.
 Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`, `delete`), `pipeline` et `routing` acceptent des gabarits, par exemple `opensearch { index => "logs" action => "update" document_id => "%{id}" doc_as_upsert => true routing => "%{host}" }`.
 
 Nom de champ contenant des crochets (#124) : avec `--field-reference-escape-style percent`, `%{[map%5Bk%5D]}` lit le champ `map[k]` ; `ampersand` utilise `&#91;` et `&#93;`. Défaut `none`, comme Logstash.

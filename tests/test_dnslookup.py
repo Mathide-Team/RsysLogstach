@@ -341,13 +341,28 @@ class TestInterpreteur:
         PipelineInterpreter(conf).apply(doc)
         assert doc == {"host": {"ip": "web.local"}, "tags": ["dns"]}
 
-    def test_variable_non_resolue_bloc_ignore(self) -> None:
+    def test_variable_non_resolue_refus_au_chargement(self) -> None:
+        # #122 : `${VAR}` non défini sans valeur par défaut est une erreur
+        # de configuration au chargement du `.conf`, comme Logstash —
+        # avant #122 le bloc était silencieusement ignoré.
         conf = (
             'filter { dns { reverse => ["ip"] hit_cache_size => "${LOGSTASH_DNS_HIT_CACHE_SIZE}" add_tag => ["dns"] } }'
         )
+        with pytest.raises(ValueError, match="LOGSTASH_DNS_HIT_CACHE_SIZE"):
+            PipelineInterpreter(conf)
+
+    def test_variable_avec_defaut_active_le_bloc(self, tmp_path) -> None:
+        # `${VAR:défaut}` : la valeur par défaut sert à la construction.
+        hosts = tmp_path / "hosts"
+        hosts.write_text("10.0.0.1 web.local\n", encoding="utf-8")
+        conf = (
+            "filter { dns {"
+            ' reverse => ["ip"] action => "replace"'
+            ' hostsfile => ["' + str(hosts) + '"]'
+            ' hit_cache_size => "${LOGSTASH_DNS_HIT_CACHE_SIZE:100}"'
+            ' add_tag => ["dns"] } }'
+        )
         interp = PipelineInterpreter(conf)
-        for _ in range(2):
-            doc = {"ip": "10.0.0.1"}
-            interp.apply(doc)
-            assert doc == {"ip": "10.0.0.1"}
-        assert list(interp._dns_filters.values()) == [None]
+        doc = {"ip": "10.0.0.1"}
+        interp.apply(doc)
+        assert doc == {"ip": "web.local", "tags": ["dns"]}
