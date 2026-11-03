@@ -49,18 +49,18 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from loguru import logger
+from pystashtemplate.enrichment import DictEnricher, GeoIPEnricher
+from pystashtemplate.filters import FilterPipeline
+from pystashtemplate.interpreter import PipelineInterpreter
+from pystashtemplate.templates import ESCAPE_STYLES, set_escape_style
+from pystashtemplate.tracing import traced
+from pystashtemplate.util import load_json_file, opensearch_auth_from_env
 
 from dlq import LocalDeadLetterQueue, parse_duration, parse_size
-from enrichment import DictEnricher, GeoIPEnricher
-from filters import FilterPipeline
 from i18n import _
 from indexer import OpenSearchIndexer, SendOutcome
-from interpreter import PipelineInterpreter
 from metrics import Metrics
 from opensearchconf import apply_connection_options, collect_connection_options, conf_auth
-from templates import ESCAPE_STYLES, set_escape_style
-from tracing import traced
-from util import load_json_file, opensearch_auth_from_env
 
 ACK_OK = "OK"
 # Toute réponse autre que « OK » est un échec pour rsyslog : il suspend

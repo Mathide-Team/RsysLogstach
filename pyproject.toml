@@ -7,16 +7,11 @@ requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7",
     "opensearch-py[async]",
-    "geoip2",
-    "maxminddb",
-    "pyyaml",
-    "logstash-pipeline-parser==0.0.3",
-    "mmh3",
     "prometheus-client==0.26.0",  # métriques /metrics (issue #35), version figée
-    "ua-parser==1.0.2",
-    "ua-parser-builtins==202610",
-    "lxml==6.1.3",
-    "dnspython==2.9.1",
+    # Découpage #111 : la sémantique Logstash (gabarits, filtres, interprétation
+    # des .conf, enrichissement) vit désormais dans PyStashTemplate, dépendance
+    # figée sur le tag v0.1.0 — comme tout autre outil (…beat) pourrait le faire.
+    "pystashtemplate @ git+https://github.com/Mathilde-Team/PyStashTemplate.git@v0.1.0",
 ]
 
 [project.scripts]
@@ -35,6 +30,10 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Dépendance directe git (PyStashTemplate v0.1.0, découpage #111) : autorisée.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 # Projet à plat (src/*.py) : la roue expose les modules au niveau RACINE

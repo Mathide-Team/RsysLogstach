@@ -46,13 +46,15 @@ class TestPyproject:
         assert callable(omprog.main)
 
     def test_modules_exposes_a_la_racine_de_la_roue(self) -> None:
-        # Garde-fou sur la DISPOSITION : les modules doivent rester des
+        # Garde-fou sur la DISPOSITION : le connecteur doit rester des
         # fichiers à plat dans src/ (pas de sous-package) — sinon la roue
-        # n'exposerait plus les noms attendus au niveau racine.
+        # n'exposerait plus les noms attendus au niveau racine. Depuis le
+        # découpage #111, la bibliothèque (filters, templates...) vient du
+        # paquet pystashtemplate, pas de src/.
         src = Path(__file__).resolve().parents[1] / "src"
         modules = sorted(p.name for p in src.glob("*.py"))
         assert "omprog.py" in modules
-        assert "filters.py" in modules
+        assert "filters.py" not in modules, "filters.py (bibliothèque) doit venir de pystashtemplate, plus de src/"
         assert not (src / "__init__.py").exists(), "src/ doit rester à plat (modules top-level), pas un package « src »"
 
 

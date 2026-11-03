@@ -37,8 +37,7 @@ import sys
 from pathlib import Path
 
 from loguru import logger
-
-from tracing import traced
+from pystashtemplate.tracing import traced
 
 DOMAIN = "rsyslogstach"
 ENV_LOCALEDIR = "RSYSLOGSTACH_LOCALEDIR"

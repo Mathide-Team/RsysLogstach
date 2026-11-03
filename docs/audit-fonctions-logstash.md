@@ -1,6 +1,10 @@
 # Audit des fonctions Logstash utilisables dans les templates
 
-Issue #101. État au 03/11/2026 sur `dev`. Ce tableau recense les fonctions
+Issue #101. État au 03/11/2026 sur `dev`. Depuis le découpage #111, les
+fonctions recensées ici vivent dans le dépôt
+[PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)
+(paquet `pystashtemplate`, dépendance de RsysLogstach) — les chemins
+`src/*.py` cités deviennent des modules de ce paquet. Ce tableau recense les fonctions
 qu'un pipeline Logstash peut utiliser : gabarits sprintf `%{...}`, conditions,
 plugins `filter{}` et `output{}`, options communes. Il indique ensuite ce que
 rsyslogstach interprète réellement.
@@ -14,7 +18,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 [références de champs et sprintf](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html),
 [plugin logstash-output-opensearch](https://github.com/opensearch-project/logstash-output-opensearch).
 
-## Gabarits sprintf (`src/templates.py`)
+## Gabarits sprintf (PyStashTemplate : `templates`)
 
 | Fonction | Fait / pas fait | Commentaires |
 |---|---|---|
@@ -31,7 +35,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | Échappement de crochets dans un nom de champ (`none`/`percent`/`ampersand`) | fait | `--field-reference-escape-style` (#124), équivalent de `field_reference.escape_style` de logstash.yml : `%5B`/`%5D` ou `&#91;`/`&#93;` désignent un crochet littéral, dans les gabarits comme dans les options des plugins. |
 | `${VAR}` / `${VAR:défaut}` (variables d'environnement du `.conf`) | fait (#122) | Substitués au chargement du `.conf`, avant l'analyse : la variable définie prime sur la valeur par défaut ; non définie sans défaut → `ValueError` qui la nomme. `%{champ}` (rendu par événement) non concerné. Noms invalides (`${1x}`) laissés tels quels. |
 
-## Conditions `if` / `else if` / `else` (`src/interpreter.py`)
+## Conditions `if` / `else if` / `else` (PyStashTemplate : `interpreter`)
 
 | Fonction | Fait / pas fait | Commentaires |
 |---|---|---|
