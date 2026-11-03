@@ -258,6 +258,17 @@ def test_pipeline_output_opensearch_donne_index_et_id(tmp_path):
     assert [(i, d) for _, i, d in bridge.indexer.sent] == [("logs-a", "42")]
 
 
+def test_pipeline_clone_deux_evenements_deux_indexations(tmp_path):
+    # #159 : clone produit deux événements, tous deux indexés — au second
+    # passage de la boucle, l'issue du premier est conservée (branche
+    # 318->316 de handle_doc, non RETRYABLE et outcome déjà fixé).
+    conf = tmp_path / "p.conf"
+    conf.write_text('filter { clone { clones => ["copie"] } }', encoding="utf-8")
+    bridge = _bridge("--pipeline-conf", str(conf))
+    assert _run(bridge.handle_line('{"msg": "x"}')) == "OK"
+    assert len(bridge.indexer.sent) == 2
+
+
 def test_pipeline_dossier_lu_par_ordre_de_nom(tmp_path):
     (tmp_path / "20_b.conf").write_text('filter { mutate { add_field => { "b" => "2" } } }', encoding="utf-8")
     (tmp_path / "10_a.conf").write_text('filter { mutate { add_field => { "a" => "1" } } }', encoding="utf-8")
