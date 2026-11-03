@@ -26,6 +26,15 @@ class TestGabaritsDeDate:
         doc = {"@timestamp": "2026-01-02T03:04:05.678Z"}
         assert render_template("logs-%{+YYYY.MM.dd}", doc, now=NOW) == "logs-2026.01.02"
 
+    def test_epoch_secondes_depuis_timestamp(self) -> None:
+        """`%{+%s}` : secondes depuis l'epoch, comme Logstash (issue #102)."""
+        doc = {"@timestamp": "2026-11-03T10:00:00.900Z"}
+        assert render_template("id-%{+%s}", doc, now=NOW) == "id-1793700000"
+
+    def test_epoch_secondes_repli_sur_now(self) -> None:
+        """Sans `@timestamp`, `%{+%s}` prend l'heure de traitement."""
+        assert render_template("%{+%s}", {}, now=NOW) == str(int(NOW.timestamp()))
+
     def test_nouvelle_syntaxe_et_time_now(self) -> None:
         doc = {"@timestamp": "2026-01-02T03:04:05+00:00"}
         assert render_template("%{{yyyy-MM-dd'T'HH:mm:ss}}", doc, now=NOW) == "2026-01-02T03:04:05"
