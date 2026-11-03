@@ -16,6 +16,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`,
+  `delete`), `pipeline`, `routing` et `doc_as_upsert`, en gabarits sprintf.
 - **Gabarits de date** (#123) : lettres Java Time manquantes dans `%{{…}}` (`G`, `u`, `Y`, `Q`/`q`, `MMM`/`MMMM`, `L`, `w`, `W`, `D`, `E`, `e`, `c`, `a`, `h`, `K`, `k`, `n`, `N`, `A`, `VV`, `O`) et lettres Joda propres à `%{+…}` (`C`, `x`, `e`, `E`, `MMM`). `S…` affiche désormais les microsecondes (`SSSSSS` → `123456` au lieu de `123000`).
 - **`dns` natif** (#121) dans les `.conf` : `resolve`, `reverse`, `action` (`append`/`replace`), `hostsfile`, `nameserver` (chaîne, liste ou hash `address`/`search`/`ndots`), `timeout`, `max_retries`, `tag_on_timeout`, caches des succès et des échecs avec durée de vie, noms IDNA. `RSYSLOGSTACH_DNS=off` coupe les requêtes réseau.
 - **`xml` natif** (#121) dans les `.conf` : `store_xml` (conversion façon XmlSimple, comme Logstash), `xpath` avec `namespaces` et `remove_namespaces`, `parse_options`, `force_array`, `force_content`, `suppress_empty`, tag `_xmlparsefailure`. Entités externes, DTD et XInclude jamais actifs.

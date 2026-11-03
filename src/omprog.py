@@ -308,11 +308,7 @@ class Bridge:
             if action.plugin not in _INDEX_PLUGINS:
                 logger.debug("Sortie {plugin} non gérée par omprog, ignorée", plugin=action.plugin)
                 continue
-            result = await self._send(
-                doc,
-                index=_option_str(action.options.get("index")),
-                document_id=_option_str(action.options.get("document_id")),
-            )
+            result = await self._send(doc, **_options_envoi(action.options))
             # Un seul échec transitoire suffit pour que rsyslog renvoie le message.
             if result is SendOutcome.RETRYABLE or outcome is None:
                 outcome = result
@@ -345,6 +341,26 @@ class Bridge:
             if close is not None:
                 close()
         await self.indexer.close()
+
+
+@traced
+def _options_envoi(options: dict[str, Any]) -> dict[str, Any]:
+    """Options d'une sortie opensearch rendues → arguments d'`indexer.send`.
+
+    `action`, `pipeline` et `routing` (#126) ne sont passés que s'ils sont
+    renseignés, `doc_as_upsert` que s'il est vrai.
+    """
+    envoi: dict[str, Any] = {
+        "index": _option_str(options.get("index")),
+        "document_id": _option_str(options.get("document_id")),
+    }
+    for cle in ("action", "pipeline", "routing"):
+        valeur = _option_str(options.get(cle))
+        if valeur is not None:
+            envoi[cle] = valeur
+    if options.get("doc_as_upsert") is True:
+        envoi["doc_as_upsert"] = True
+    return envoi
 
 
 @traced
