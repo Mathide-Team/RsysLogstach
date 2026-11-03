@@ -4,6 +4,16 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+## [0.10.1] - 2026-11-03
+
+### Ajouté
+- **Tests : parité complète indexer↔sortie, 100 % de couverture (#159,
+  PR #164)** — la migration #160 laissait quatre lignes de `src/indexer.py`
+  (avertissement multi-nœuds, options `auth`, couture `_client()`, action
+  invalide sans DLQ) et la branche multievents de `handle_doc` non couvertes ;
+  `src/` atteint 100 % de couverture lignes et branches (277 tests),
+  l'exigence de l'issue #159.
+
 ## [0.10.0] - 2026-11-03
 
 ### Ajouté
