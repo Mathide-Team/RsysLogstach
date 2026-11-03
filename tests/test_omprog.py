@@ -280,7 +280,7 @@ def test_sortie_non_geree_ignoree():
     class Interp:
         has_output = True
 
-        def apply_events(self, doc, **kw):
+        async def apply_events(self, doc, **kw):
             from pystashtemplate.interpreter import OutputAction
 
             return [
@@ -344,21 +344,23 @@ def test_serve_arret_sur_signal():
 
 
 def test_index_template_composable():
-    class Indices:
-        def __init__(self):
-            self.calls = []
+    """Client httpx de la sortie (#160) : PUT _index_template/{name} en JSON."""
 
-        async def put_index_template(self, name, body):
-            self.calls.append(("composable", name, sorted(body)))
-
-        async def put_template(self, name, body):
-            self.calls.append(("ancien", name, sorted(body)))
+    class Reponse:
+        def raise_for_status(self) -> None:
+            return None
 
     class Client:
-        indices = Indices()
+        def __init__(self):
+            self.calls: list[tuple[str, list[str]]] = []
 
-    _run(omprog.install_index_template(Client, "switch-logs", str(ROOT / "opensearch-index-template.json")))
-    assert Client.indices.calls == [("composable", "switch-logs", ["index_patterns", "priority", "template"])]
+        async def put(self, chemin, json=None):
+            self.calls.append((chemin, sorted(json)))
+            return Reponse()
+
+    client = Client()
+    _run(omprog.install_index_template(client, "switch-logs", str(ROOT / "opensearch-index-template.json")))
+    assert client.calls == [("_index_template/switch-logs", ["index_patterns", "priority", "template"])]
 
 
 def test_script_de_bout_en_bout_sans_opensearch(tmp_path):

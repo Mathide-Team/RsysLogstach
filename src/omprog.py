@@ -311,7 +311,9 @@ class Bridge:
             return await self._send(doc)
         outcome: SendOutcome | None = None
         # #141 : clone/split produisent plusieurs événements, tous indexés.
-        for event, actions in self.interpreter.apply_events(doc, on_missing=self.pipeline_on_missing):
+        # apply_events est asynchrone depuis PyStashTemplate #34 : même
+        # sémantique, l'appelant attend désormais la liste.
+        for event, actions in await self.interpreter.apply_events(doc, on_missing=self.pipeline_on_missing):
             result = await self._send_event(event, actions)
             if result is SendOutcome.RETRYABLE or outcome is None:
                 outcome = result
@@ -464,12 +466,22 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
 
 @traced
 async def install_index_template(client: Any, name: str, path: str) -> None:
-    """Installe l'index template (composable si `index_patterns` + `template`, sinon ancien format)."""
+    """Installe l'index template (composable si `index_patterns` + `template`, sinon ancien format).
+
+    Migration #160 : `client` est le client httpx de la sortie
+    PyStashTemplate (voir `OpenSearchIndexer._client`) — les API
+    `_index_template`/`_template` du produit sont appelées telles
+    quelles, en JSON, sans le client opensearch-py historique. Le client
+    n'est PAS fermé ici : il est partagé avec `send` (la sortie le recrée
+    paresseusement si besoin, mais il sert juste après).
+    """
     body = load_json_file(path)
     if "template" in body:
-        await client.indices.put_index_template(name=name, body=body)
+        chemin = f"_index_template/{name}"
     else:
-        await client.indices.put_template(name=name, body=body)
+        chemin = f"_template/{name}"
+    reponse = await client.put(chemin, json=body)
+    reponse.raise_for_status()
     logger.info(_("Index template installé nom={name}"), name=name)
 
 
@@ -566,7 +578,7 @@ async def amain(args: argparse.Namespace) -> int:
     """Construit le pont, installe l'index template, sert jusqu'à l'arrêt."""
     bridge = build_bridge(args)
     if args.index_template:
-        await install_index_template(bridge.indexer._client, args.index_template_name, args.index_template)
+        await install_index_template(await bridge.indexer._client(), args.index_template_name, args.index_template)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

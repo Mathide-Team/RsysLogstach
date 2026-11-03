@@ -8,12 +8,22 @@ dynamique, session 9) et de `dlq` (dead letter queue locale pour les
 `enrichment` (aucune raison pour l'indexation de connaître les filtres
 d'extraction ou l'enrichissement).
 
-Fix de cohérence (session 13, constaté en touchant ce fichier pour la DLQ) :
-`@traced` (voir PATTERNS.md, "Traçabilité systématique des fonctions")
-n'était appliqué à AUCUNE fonction de ce module jusqu'ici, contrairement à
-la convention "toutes les fonctions du projet" en place depuis la session
-9 — un oubli de la réorganisation de cette session-là, pas une exception
-volontaire. Ajouté ci-dessous à toutes les méthodes.
+Migration #160 : le client opensearch-py est remplacé par la sortie
+`OpenSearchOutput` de PyStashTemplate (issue #12, client `_bulk` commun
+de l'issue #11). Ce module garde SA signature (build_bridge ne change
+pas) et son contrat (`SendOutcome`, DLQ, fingerprint, gabarit) — il
+traduit les options du connecteur en options de sortie, délègue l'envoi
+et mappe les résultats. Le format de la DLQ et le fichier sont
+strictement identiques (le port `pystashtemplate.dlq` EST l'ancien
+`rsyslogstach.dlq`) : aucune perte à la migration.
+
+Parité documentée (voir `outputs/opensearch.py` côté PyStashTemplate) :
+l'option `hosts` du connecteur pouvait porter PLUSIEURS nœuds (le
+transport opensearch-py faisait le failover) ; la sortie n'en utilise
+qu'un seul (première entrée) — le failover revient à l'appelant
+(rsyslog retient le message, `SendOutcome.RETRYABLE`). De même,
+`pipeline` est désormais transmis aussi pour `update`/`delete` (l'ancien
+client l'ignorait silencieusement pour ces actions).
 """
 
 from __future__ import annotations
@@ -23,9 +33,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from loguru import logger
-from opensearchpy import AsyncOpenSearch
-from opensearchpy.exceptions import NotFoundError, OpenSearchException, RequestError
 from pystashtemplate.fingerprint import compute_fingerprint
+from pystashtemplate.outputs.elasticsearch_bulk import (
+    ActionInvalideError as _ActionSortieInvalide,
+)
+from pystashtemplate.outputs.elasticsearch_bulk import SendOutcome as _SortieOutcome
+from pystashtemplate.outputs.opensearch import OpenSearchOutput
 from pystashtemplate.templates import CompiledTemplate, compile_template, render
 from pystashtemplate.tracing import traced
 
@@ -33,14 +46,6 @@ from dlq import LocalDeadLetterQueue
 from i18n import _
 
 OPENSEARCH_TIMEOUT = 3.0  # secondes, timeout socket du client OpenSearch
-
-# Erreurs considérées comme permanentes (jamais transitoires) : un document
-# qui provoque l'une d'elles ne deviendra jamais indexable en le rejouant
-# tel quel (RequestError = 400, ex. type de champ incompatible avec le
-# mapping de l'index ; NotFoundError = 404). Toute autre OpenSearchException
-# (ConnectionError, ConnectionTimeout, erreur 5xx...) reste traitée comme
-# transitoire, comportement inchangé.
-_PERMANENT_ERRORS = (RequestError, NotFoundError)
 
 # Issue #126 : actions `bulk` du plugin de sortie Logstash.
 ACTIONS = ("index", "create", "update", "delete")
@@ -88,11 +93,11 @@ class OpenSearchIndexer:
     d'indexer avec un `_id` vide.
 
     dlq (session 13) : si fourni, un échec d'indexation identifié comme
-    PERMANENT (voir `_PERMANENT_ERRORS`) est écrit dans cette dead letter
-    queue locale plutôt que rendu indéfiniment à rsyslog — voir `dlq.py`
-    et `SendOutcome`. Sans `dlq` (défaut), comportement historique
-    inchangé : toute `OpenSearchException`, permanente ou non, retombe sur
-    `SendOutcome.RETRYABLE`.
+    PERMANENT (statut 400/404, action invalide — voir la sortie
+    PyStashTemplate) est écrit dans cette dead letter queue locale plutôt
+    que rendu indéfiniment à rsyslog — voir `dlq.py` et `SendOutcome`.
+    Sans `dlq` (défaut), comportement historique inchangé : tout échec,
+    permanent ou non, retombe sur `SendOutcome.RETRYABLE`.
 
     document_id_fingerprint_fields (session 17, `fingerprint.py`) : si
     fourni (même une liste vide), un `_id` déterministe est dérivé d'un
@@ -124,14 +129,16 @@ class OpenSearchIndexer:
         client_cert: str | None = None,
         client_key: str | None = None,
     ) -> None:
-        """Initialise le client OpenSearch.
+        """Initialise la sortie OpenSearch de PyStashTemplate.
 
         Args:
-            hosts: Liste de nœuds, ex. [{"host": "127.0.0.1", "port": 9200}].
+            hosts: Liste de nœuds, ex. [{"host": "127.0.0.1", "port": 9200}]
+                — seule la PREMIÈRE entrée est utilisée (failover à
+                l'appelant, voir la docstring du module).
             auth: Couple (utilisateur, mot de passe), ou None si non authentifié.
             index_pattern: Motif strftime du nom d'index quotidien (ex.
                 "switch-logs-%Y.%m.%d").
-            use_ssl: Utiliser HTTPS pour se connecter aux nœuds.
+            use_ssl: Utiliser HTTPS pour se connecter au nœud.
             verify_certs: Vérifier les certificats TLS (à désactiver
                 seulement pour un cluster interne à certificat auto-signé).
             document_id_template: Gabarit Logstash optionnel (voir la
@@ -163,32 +170,46 @@ class OpenSearchIndexer:
         self._document_id_fingerprint_method = document_id_fingerprint_method
         self._document_id_fingerprint_key = document_id_fingerprint_key
         self._dlq = dlq
-        # Failover multi-nœuds (issue #37) : le transport opensearch-py
-        # retente le nœud suivant en cas d'échec de connexion. `retry_on_timeout`
-        # étend ce repli aux délais d'attente (défaut de la bibliothèque :
-        # False — un timeout ne basculait PAS sur le nœud suivant).
-        self._client = AsyncOpenSearch(
-            hosts=hosts,
-            http_auth=auth,
-            use_ssl=use_ssl,
-            verify_certs=verify_certs,
-            ssl_show_warn=False,
-            ca_certs=ca_certs,
-            client_cert=client_cert,
-            client_key=client_key,
-            timeout=OPENSEARCH_TIMEOUT,
-            retry_on_timeout=True,
-        )
+        if len(hosts) > 1:
+            logger.warning(
+                _("Plusieurs nœuds configurés ({hosts}), seul le premier est utilisé"),
+                hosts=len(hosts),
+            )
+        noeud = hosts[0]
+        scheme = "https" if use_ssl else "http"
+        options: dict[str, Any] = {
+            "hosts": f"{scheme}://{noeud['host']}:{noeud['port']}",
+            "index": index_pattern,
+            "ssl": verify_certs,
+            "timeout": OPENSEARCH_TIMEOUT,
+            # Un document par lot : l'accusé de réception est TOUJOURS
+            # réel (jamais EN_ATTENTE), comme l'ancien client qui
+            # envoyait chaque document individuellement.
+            "batch_size": 1,
+            # retry_max=0 : parité avec l'ancien indexer, qui ne retentait
+            # PAS lui-même (le transport opensearch-py retentait au pire
+            # une fois par nœud) — le retour à rsyslog (RETRYABLE) reste
+            # le mécanisme de réessai.
+            "retry_max": 0,
+        }
+        if auth is not None:
+            options["user"], options["password"] = auth
+        if ca_certs is not None:
+            options["cacert"] = ca_certs
+        if client_cert is not None:
+            options["ssl_certificate"] = client_cert
+        if client_key is not None:
+            options["ssl_key"] = client_key
+        self.sortie = OpenSearchOutput(options, dlq=dlq)
 
     @traced
     async def health(self) -> dict[str, Any]:
         """Interroge le cluster (GET /) : sa version, ou lève l'erreur.
 
-        Utilisé par le health check périodique d'omprog (issue #37). Le
-        failover d'un nœud à l'autre, lui, est géré par le transport
-        opensearch-py à chaque requête (voir `__init__`).
+        Utilisé par le health check périodique d'omprog (issue #37) —
+        délégue à `OpenSearchOutput.health`.
         """
-        return await self._client.info()
+        return await self.sortie.health()
 
     @traced
     def _current_index(self) -> str:
@@ -221,45 +242,14 @@ class OpenSearchIndexer:
         return rendered or None
 
     @traced
-    async def _executer(
-        self,
-        action: str,
-        index: str,
-        doc: dict,
-        document_id: str | None,
-        params: dict[str, str],
-        *,
-        doc_as_upsert: bool,
-    ) -> None:
-        """Appelle l'API OpenSearch qui correspond à `action` (#126).
+    async def _client(self):
+        """Client httpx paresseux de la sortie (couture d'omprog : template d'index).
 
-        `index` et `create` passent par l'API index (`op_type=create` pour
-        `create`) et acceptent `pipeline` et `routing` ; `update` et
-        `delete` exigent un `_id` et n'acceptent que `routing`, comme les
-        API `_update` et `_doc` DELETE.
-
-        Raises:
-            ActionInvalideError: Action inconnue, ou `_id` manquant.
+        Le client est partagé avec `send` (il est recréé paresseusement
+        après une fermeture) — l'appelant qui le ferme doit savoir que
+        le prochain envoi le rouvrira.
         """
-        if action not in ACTIONS:
-            raise ActionInvalideError(f"action inconnue : {action!r}")
-        if action in ("index", "create"):
-            if action == "create":
-                params = {**params, "op_type": "create"}
-            await self._client.index(index=index, body=doc, id=document_id, **params)
-            return
-        if not document_id:
-            raise ActionInvalideError(f"l'action {action} exige document_id")
-        routage = {k: v for k, v in params.items() if k == "routing"}
-        if len(routage) != len(params):
-            logger.debug("_executer: pipeline ignoré pour l'action {}", action)
-        if action == "update":
-            corps: dict[str, Any] = {"doc": doc}
-            if doc_as_upsert:
-                corps["doc_as_upsert"] = True
-            await self._client.update(index=index, id=document_id, body=corps, **routage)
-        else:
-            await self._client.delete(index=index, id=document_id, **routage)
+        return self.sortie._client_http()
 
     @traced
     async def send(
@@ -273,7 +263,7 @@ class OpenSearchIndexer:
         routing: str | None = None,
         doc_as_upsert: bool = False,
     ) -> SendOutcome:
-        """Indexe un document dans OpenSearch.
+        """Indexe un document dans OpenSearch (via `OpenSearchOutput.envoyer`).
 
         Args:
             doc: Document déjà enrichi, prêt à indexer.
@@ -305,21 +295,32 @@ class OpenSearchIndexer:
         """
         resolved_index = index or self._current_index()
         resolved_id = document_id or self._document_id(doc)
-        params = {k: v for k, v in (("pipeline", pipeline), ("routing", routing)) if v}
         try:
-            await self._executer(action, resolved_index, doc, resolved_id, params, doc_as_upsert=doc_as_upsert)
-            return SendOutcome.INDEXED
-        except (*_PERMANENT_ERRORS, ActionInvalideError) as exc:
+            outcome = await self.sortie.envoyer(
+                doc,
+                index=resolved_index,
+                document_id=resolved_id,
+                action=action,
+                pipeline=pipeline,
+                routing=routing,
+                doc_as_upsert=doc_as_upsert,
+            )
+        except _ActionSortieInvalide as exc:
+            # La sortie valide l'action de façon synchrone (elle ne peut
+            # pas tamponner un document sans `_id` pour `update`/
+            # `delete`) : même chemin permanent que l'ancien `_executer`.
             logger.warning(_("Indexation OpenSearch échouée définitivement erreur={error}"), error=exc)
             if self._dlq is not None:
                 await self._dlq.write(doc, index=resolved_index, error=str(exc))
                 return SendOutcome.DEAD_LETTERED
             return SendOutcome.RETRYABLE
-        except OpenSearchException as exc:
-            logger.warning(_("Indexation OpenSearch échouée erreur={error}"), error=exc)
-            return SendOutcome.RETRYABLE
+        if outcome is _SortieOutcome.DEAD_LETTERED:
+            return SendOutcome.DEAD_LETTERED
+        if outcome is _SortieOutcome.INDEXED:
+            return SendOutcome.INDEXED
+        return SendOutcome.RETRYABLE
 
     @traced
     async def close(self) -> None:
-        """Ferme proprement le client OpenSearch."""
-        await self._client.close()
+        """Ferme proprement la sortie (et son client HTTP)."""
+        await self.sortie.close()
