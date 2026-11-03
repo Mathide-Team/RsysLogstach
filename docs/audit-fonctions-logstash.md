@@ -53,7 +53,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
 | `translate` | partiel | `source`, `target`, `dictionary_path` (YAML), `fallback` (gabarit sprintf). Non lus : `dictionary` en ligne, `exact`, `regex`, `override`, `refresh_behaviour`, `iterate_on`. |
 | `drop` | fait | `percentage` compris. |
-| `grok` | pas fait | Remplacé par un step `regex` à groupes nommés dans `--filters`, ou appelé via `filters_json`. |
+| `grok` | fait | Bloc natif (#112) : bibliothèque des 70 motifs de base Logstash, `%{SYNTAXE:champ:int}` et `:float`, `(?<champ>...)`, `break_on_match`, `overwrite`, `tag_on_failure`, `patterns_dir`, `patterns_files_glob`, `pattern_definitions`, `keep_empty_captures`, `target`. Moteur `re` Python : `named_captures_only` toujours vrai, `timeout_millis` non appliqué. |
 | `kv` | fait | Bloc natif `filter { kv { ... } }` (#113) : `source`, `target` (fusion dans un hash existant), `field_split`, `value_split`, `include_keys`, `exclude_keys`, `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values` (clé répétée → liste, dédup si `false`). Réutilise `filters.KeyValueFilter` (même algorithme que le step `--filters`). |
 | `json` | fait | Bloc `filter{}` natif (#115) : `source`, `target` (sinon fusion à la racine), `skip_on_invalid_json`, `tag_on_failure` (défaut `_jsonparsefailure`). `@timestamp` décodé n'est pas converti en date. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |
@@ -66,7 +66,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 
 | Option | Fait / pas fait | Commentaires |
 |---|---|---|
-| `add_field`, `remove_field`, `add_tag`, `remove_tag` | fait | Après tout filtre natif réussi (`mutate`, `dissect`, `date`, `geoip`, `translate`, `mmdb`), jamais après un échec, comme `filter_matched` (#116). |
+| `add_field`, `remove_field`, `add_tag`, `remove_tag` | fait | Après tout filtre natif réussi (`mutate`, `dissect`, `date`, `geoip`, `translate`, `mmdb`, `kv`, `grok`), jamais après un échec, comme `filter_matched` (#116). |
 | `id`, `enable_metric`, `periodic_flush` | hors périmètre | Sans effet sur le document. |
 
 ## Plugins et options `output{}`
