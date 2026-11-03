@@ -58,16 +58,16 @@ def collect_connection_options(plugins: list[tuple[str, dict[str, Any]]]) -> dic
     for name, options in plugins:
         if name not in INDEX_PLUGINS:
             continue
-        for key in CONNECTION_OPTIONS:
-            if key not in options:
+        for option in CONNECTION_OPTIONS:
+            if option not in options:
                 continue
-            value = _check_value(name, key, options[key])
-            if key in merged and merged[key] != value:
+            value = _check_value(name, option, options[option])
+            if option in merged and merged[option] != value:
                 raise ValueError(
-                    f"output {name} : option {key!r} différente d'un bloc à l'autre ; "
+                    f"output {name} : option {option!r} différente d'un bloc à l'autre ; "
                     "le pont n'a qu'une connexion OpenSearch"
                 )
-            merged[key] = value
+            merged[option] = value
     if ("user" in merged) != ("password" in merged):
         raise ValueError("output opensearch : 'user' et 'password' vont ensemble")
     logger.debug("collect_connection_options | options={}", sorted(merged))
@@ -75,36 +75,36 @@ def collect_connection_options(plugins: list[tuple[str, dict[str, Any]]]) -> dic
 
 
 @traced
-def _check_value(plugin: str, key: str, value: Any) -> Any:
+def _check_value(plugin: str, option: str, value: Any) -> Any:
     """Contrôle le type d'une option de connexion et la normalise (`hosts` en liste)."""
-    if key == "hosts":
+    if option == "hosts":
         hosts = [value] if isinstance(value, str) else value
         if not isinstance(hosts, list) or not hosts or not all(isinstance(h, str) and h for h in hosts):
             raise ValueError(f"output {plugin} : 'hosts' attend une URL ou une liste d'URLs")
         checked: Any = hosts
-    elif key in _BOOLEAN_OPTIONS:
-        checked = _to_bool(plugin, key, value)
+    elif option in _BOOLEAN_OPTIONS:
+        checked = _to_bool(plugin, option, value)
     else:
         if not isinstance(value, str) or not value:
-            raise ValueError(f"output {plugin} : {key!r} attend une chaîne non vide")
+            raise ValueError(f"output {plugin} : {option!r} attend une chaîne non vide")
         checked = value
     texts = checked if isinstance(checked, list) else [checked]
     if any(isinstance(t, str) and "${" in t for t in texts):
-        raise ValueError(f"output {plugin} : {key!r} contient une variable ${{…}} non remplacée")
-    logger.debug("_check_value | {} {}", plugin, key)
+        raise ValueError(f"output {plugin} : {option!r} contient une variable ${{…}} non remplacée")
+    logger.debug("_check_value | {} {}", plugin, option)
     return checked
 
 
 @traced
-def _to_bool(plugin: str, key: str, value: Any) -> bool:
+def _to_bool(plugin: str, option: str, value: Any) -> bool:
     """Booléen Logstash : `true` / `false`, littéral ou chaîne."""
     if isinstance(value, bool):
-        logger.debug("_to_bool | {}={}", key, value)
+        logger.debug("_to_bool | {}={}", option, value)
         return value
     if isinstance(value, str) and value.lower() in ("true", "false"):
-        logger.debug("_to_bool | {}={!r} (chaîne)", key, value)
+        logger.debug("_to_bool | {}={!r} (chaîne)", option, value)
         return value.lower() == "true"
-    raise ValueError(f"output {plugin} : {key!r} attend true ou false")
+    raise ValueError(f"output {plugin} : {option!r} attend true ou false")
 
 
 @traced
@@ -154,7 +154,7 @@ def apply_connection_options(args: argparse.Namespace, options: dict[str, Any]) 
 def conf_auth(options: dict[str, Any]) -> tuple[str, str] | None:
     """Couple (`user`, `password`) du `.conf`, ou None."""
     if "user" in options:
-        logger.debug("conf_auth | user={}", options["user"])
+        logger.debug("conf_auth | user et password présents")
         return (options["user"], options["password"])
     logger.debug("conf_auth | aucune")
     return None
