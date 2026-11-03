@@ -90,6 +90,8 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
 
+Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
+
 ### Index OpenSearch
 
 Template : `opensearch-index-template.json` (index pattern `switch-logs-*`).

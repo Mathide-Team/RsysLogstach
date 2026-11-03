@@ -55,7 +55,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `drop` | fait | `percentage` compris. |
 | `grok` | pas fait | Remplacé par un step `regex` à groupes nommés dans `--filters`, ou appelé via `filters_json`. |
 | `kv` | pas fait | Disponible dans `--filters` (step `kv`) et via `filters_json`, pas en bloc natif. |
-| `json` | pas fait | rsyslog envoie déjà du JSON (template `RSYSLOG_DebugFormat` / JSON) ; un champ texte contenant du JSON n'est pas décodé. |
+| `json` | oui | Bloc `filter{}` natif (#115) : `source`, `target` (sinon fusion à la racine), `skip_on_invalid_json`, `tag_on_failure` (défaut `_jsonparsefailure`). `@timestamp` décodé n'est pas converti en date. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |
 | `fingerprint` | partiel | Pas en bloc `filter{}` ; équivalent côté indexation : `--document-id-fingerprint`, `--fingerprint-method`, `--fingerprint-key`. |
 | `useragent`, `csv`, `cidr`, `clone`, `split`, `aggregate`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |

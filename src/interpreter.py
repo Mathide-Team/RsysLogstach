@@ -253,6 +253,7 @@ from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import DateFilter, Dissector, FilterPipeline, apply_common_options, apply_mutate
+from i18n import _
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -465,6 +466,8 @@ class PipelineInterpreter:
             reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
+        elif name == "json":
+            reussi = self._apply_json(doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -496,6 +499,47 @@ class PipelineInterpreter:
             return
         logger.debug("_apply_drop() raising | _DocumentDropped (percentage={})", pourcentage)
         raise _DocumentDropped("drop natif")
+
+    @traced
+    def _apply_json(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`json { source target skip_on_invalid_json tag_on_failure }` natif (#115).
+
+        Comme le filtre officiel : source absente, rien ; JSON invalide,
+        `tag_on_failure` (défaut `_jsonparsefailure`) sauf si
+        `skip_on_invalid_json` ; sans `target`, l'objet décodé est fusionné
+        à la racine (un JSON non objet est alors un échec).
+
+        Returns:
+            True si le document a été modifié (options communes, #116).
+        """
+        source = options.get("source")
+        if not isinstance(source, str):
+            logger.warning(_("json ignoré : option source manquante"))
+            return False
+        texte = resolve_field(doc, parse_field_path(source))
+        if texte is _MISSING or texte is None:
+            return False
+        echec = options.get("tag_on_failure", ["_jsonparsefailure"])
+        try:
+            if not isinstance(texte, str):
+                raise TypeError(type(texte).__name__)
+            decode = json.loads(texte)
+        except (ValueError, TypeError) as exc:
+            if options.get("skip_on_invalid_json", False) is not True:
+                add_failure_tags(doc, echec)
+                logger.warning(_("json : analyse impossible du champ {} : {}"), source, exc)
+            return False
+        cible = options.get("target")
+        if isinstance(cible, str):
+            assign_field(doc, parse_field_path(cible), decode)
+        elif isinstance(decode, dict):
+            doc.update(decode)
+        else:
+            add_failure_tags(doc, echec)
+            logger.warning(_("json : un JSON non objet exige l'option target"))
+            return False
+        logger.debug("_apply_json: {} décodé", source)
+        return True
 
     @traced
     def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:

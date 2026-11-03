@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 11:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:09+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -37,6 +37,18 @@ msgstr ""
 #: src/indexer.py
 #, python-brace-format
 msgid "Indexation OpenSearch échouée erreur={error}"
+msgstr ""
+
+#: src/interpreter.py
+msgid "json ignoré : option source manquante"
+msgstr ""
+
+#: src/interpreter.py
+msgid "json : analyse impossible du champ {} : {}"
+msgstr ""
+
+#: src/interpreter.py
+msgid "json : un JSON non objet exige l'option target"
 msgstr ""
 
 #: src/metrics.py
