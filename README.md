@@ -29,7 +29,8 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
 | `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, grok, templates, tracing, util |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, util |
+| `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
 
@@ -90,6 +91,8 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
+
+Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. `clone` et `split` restent sans effet.
 
 Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.
 Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`

@@ -16,6 +16,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Plugins `filter{}` simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`,
+  `uuid`, `syslog_pri`, `truncate` (module `simples.py`).
 - `dissect` natif (#117) : `convert_datatype` (`int`, `float`) et `tag_on_failure`
   (défaut `_dissectfailure`). Un échec de découpage est désormais tagué, comme
   Logstash, au lieu d'être ignoré en silence.

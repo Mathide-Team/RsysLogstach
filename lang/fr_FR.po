@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:18+0000\n"
+"POT-Creation-Date: 2026-11-03 12:23+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -281,4 +281,40 @@ msgstr ""
 #: src/omprog.py
 #, python-brace-format
 msgid "Échec inattendu du traitement d'un message erreur={error}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : lecture impossible de {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : réseau invalide ignoré : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : analyse impossible du champ {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : conversion impossible de {} en {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : type {} inconnu pour convert"
+msgstr ""
+
+#: src/simples.py
+msgid "syslog_pri : valeur invalide {}"
+msgstr ""
+
+#: src/simples.py
+msgid "truncate ignoré : length_bytes doit être un entier positif"
+msgstr ""
+
+#: src/simples.py
+msgid "urldecode : décodage impossible : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "uuid ignoré : option target manquante"
 msgstr ""

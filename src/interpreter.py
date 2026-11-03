@@ -261,6 +261,8 @@ from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply
 from fingerprint import FingerprintFilter
 from grok import GrokFilter
 from i18n import _
+from simples import PLUGINS as PLUGINS_SIMPLES
+from simples import appliquer_cidr, reseaux_cidr
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -380,6 +382,8 @@ class PipelineInterpreter:
         self._dissect_cache: dict[str, Dissector] = {}
         # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
         self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
+        # #120 : réseaux d'un bloc cidr, lus une fois (clé id(entry)).
+        self._cidr_cache: dict[int, list[Any]] = {}
         # `grok` (#112) : un GrokFilter compilé par jeu d'options rencontré
         # (motifs développés et regex compilées une seule fois).
         self._grok_cache: dict[str, GrokFilter] = {}
@@ -543,6 +547,12 @@ class PipelineInterpreter:
             reussi = self._apply_grok(doc, options)
         elif name == "json":
             reussi = self._apply_json(doc, options)
+        elif name in PLUGINS_SIMPLES:
+            reussi = PLUGINS_SIMPLES[name](doc, options)
+        elif name == "cidr":
+            if id(entry) not in self._cidr_cache:
+                self._cidr_cache[id(entry)] = reseaux_cidr(options)
+            reussi = appliquer_cidr(doc, options, self._cidr_cache[id(entry)])
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
