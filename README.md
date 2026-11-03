@@ -252,9 +252,13 @@ qui change des chaînes et propose une PR (branche
 ## Tests
 
 ```bash
-uv run pytest tests/ -v
-uv run ruff check src/ tests/
+make test        # pytest --cov, seuil bloquant lu dans pyproject.toml
+make lint        # ruff check .
+make fmt         # ruff format --check .
 ```
+
+Le `Makefile` exécute les mêmes commandes que la CI ; le seuil de couverture
+(95 %) n'est déclaré que dans `pyproject.toml`.
 
 ## Licence
 
