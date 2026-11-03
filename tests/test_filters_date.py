@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from filters import DateFilter, FilterPipeline, parse_date_value, translate_date_pattern
@@ -50,6 +53,18 @@ class TestStepDateFilters:
     def test_fuseau_inconnu_retombe_sur_utc(self):
         doc = {"t": "2026-10-24 06:15:00"}
         _pipeline(match=["t", "yyyy-MM-dd HH:mm:ss"], timezone="Pas/Un_Fuseau").apply(doc)
+        assert doc["@timestamp"] == "2026-10-24T06:15:00+00:00"
+
+    def test_sss_et_zone_textuelle_dans_le_step(self):
+        # #118 : SSS + « CET » (+01:00) → 05:15:00.123 UTC.
+        doc = {"t": "2026-10-24 06:15:00.123 CET"}
+        _pipeline(match=["t", "yyyy-MM-dd HH:mm:ss.SSS z"]).apply(doc)
+        assert doc["@timestamp"] == "2026-10-24T05:15:00.123000+00:00"
+
+    def test_locale_dans_le_step(self):
+        # #118 : option `locale` du plugin officiel, noms français.
+        doc = {"t": "lun. 24 oct. 2026 06:15:00"}
+        _pipeline(match=["t", "EEE dd MMM yyyy HH:mm:ss"], locale="fr").apply(doc)
         assert doc["@timestamp"] == "2026-10-24T06:15:00+00:00"
 
     def test_premier_motif_qui_correspond(self):
@@ -126,7 +141,50 @@ class TestFonctionsPartagees:
 
     def test_translate_date_pattern(self):
         assert translate_date_pattern("yyyy-MM-dd'T'HH:mm:ssXXX") == "%Y-%m-%dT%H:%M:%S%z"
-        assert translate_date_pattern("SSS") is None
+        # #118 : SSS (millisecondes) et noms de fuseaux textuels traduits.
+        assert translate_date_pattern("HH:mm:ss.SSS") == "%H:%M:%S.%f"
+        assert translate_date_pattern("yyyy zzz") == "%Y %Z"
+        assert translate_date_pattern("yyyy ZZZ") == "%Y %Z"
+        # Lettres non prises en charge (#123) : motif refusé.
+        assert translate_date_pattern("D") is None
 
     def test_parse_date_value_motif_inconnu(self):
-        assert parse_date_value("123", "SSS", None) is None
+        assert parse_date_value("123", "D", None) is None
+
+    def test_parse_date_value_sss_millisecondes(self):
+        # "123" avec SSS : 123 millisecondes (pas 123 microsecondes).
+        dt = parse_date_value("12:34:56.123", "HH:mm:ss.SSS", None)
+        assert dt is not None
+        assert (dt.hour, dt.minute, dt.second, dt.microsecond) == (12, 34, 56, 123000)
+
+    def test_parse_date_value_zone_textuelle_abreviation(self):
+        # « CET » : +01:00, prime sur `timezone` comme un fuseau explicite.
+        dt = parse_date_value("2020-01-02 CET", "yyyy-MM-dd z", None)
+        assert dt is not None
+        assert dt.utcoffset() == timedelta(hours=1)
+        assert dt.year == 2020
+
+    def test_parse_date_value_zone_textuelle_id_iana(self):
+        dt = parse_date_value("2020-01-02 Europe/Paris", "yyyy-MM-dd zzz", None)
+        assert dt is not None
+        assert dt.tzinfo == ZoneInfo("Europe/Paris")
+
+    def test_parse_date_value_zone_textuelle_absente_echec(self):
+        # Le motif attend un nom de fuseau, le texte n'en a pas : échec.
+        assert parse_date_value("2020-01-02", "yyyy-MM-dd z", None) is None
+
+    def test_parse_date_value_locale_fr(self):
+        # Noms français traduits en anglais avant strptime. Le nom de jour
+        # est lu puis écarté : la date elle-même gagne (comme Joda).
+        dt = parse_date_value("lun. 2 janv. 2020 12:34:56", "EEE dd MMM yyyy HH:mm:ss", None, locale="fr")
+        assert dt is not None
+        assert (dt.year, dt.month, dt.day) == (2020, 1, 2)
+
+    def test_parse_date_value_locale_fr_noms_complets(self):
+        dt = parse_date_value("lundi 2 mars 2021", "EEEE dd MMMM yyyy", None, locale="fr")
+        assert dt is not None
+        assert (dt.year, dt.month, dt.day) == (2021, 3, 2)
+
+    def test_parse_date_value_locale_inconnue_ignoree(self):
+        # Locale sans table : noms anglais attendus, « janv. » ne matche pas.
+        assert parse_date_value("lun. 2 janv. 2020", "EEE dd MMM yyyy", None, locale="xx") is None

@@ -22,6 +22,11 @@ msgid "base geoip illisible : {} ({})"
 msgstr ""
 
 #: src/filters.py
+#, python-brace-format
+msgid "date : fuseau {name} devenu inconnu, UTC retenu erreur={error}"
+msgstr ""
+
+#: src/filters.py
 msgid "dictionnaire translate illisible : {} ({})"
 msgstr ""
 
