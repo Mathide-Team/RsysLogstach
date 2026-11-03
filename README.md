@@ -87,6 +87,9 @@ Step `date` (#34), mêmes options que le plugin `date` de Logstash : `{"type": "
 
 Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSearch.
 
+Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
+`filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
+
 ### Index OpenSearch
 
 Template : `opensearch-index-template.json` (index pattern `switch-logs-*`).
