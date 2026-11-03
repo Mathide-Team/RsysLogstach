@@ -92,3 +92,10 @@ class TestSources:
 )
 def test_valeur_texte(valeur: object, texte: str) -> None:
     assert _valeur_texte(valeur) == texte
+
+
+def test_kv_source_non_texte_ignoree() -> None:
+    """Couvre la garde `source` non texte de `_apply_kv` (#113), arrivée sans test sur dev."""
+    doc = {"message": "a=1"}
+    PipelineInterpreter('filter { kv { source => ["message"] add_tag => ["t"] } }').apply(doc)
+    assert doc == {"message": "a=1"}

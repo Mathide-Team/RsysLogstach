@@ -54,7 +54,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `translate` | partiel | `source`, `target`, `dictionary_path` (YAML), `fallback` (gabarit sprintf). Non lus : `dictionary` en ligne, `exact`, `regex`, `override`, `refresh_behaviour`, `iterate_on`. |
 | `drop` | fait | `percentage` compris. |
 | `grok` | pas fait | Remplacé par un step `regex` à groupes nommés dans `--filters`, ou appelé via `filters_json`. |
-| `kv` | pas fait | Disponible dans `--filters` (step `kv`) et via `filters_json`, pas en bloc natif. |
+| `kv` | fait | Bloc natif `filter { kv { ... } }` (#113) : `source`, `target` (fusion dans un hash existant), `field_split`, `value_split`, `include_keys`, `exclude_keys`, `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values` (clé répétée → liste, dédup si `false`). Réutilise `filters.KeyValueFilter` (même algorithme que le step `--filters`). |
 | `json` | pas fait | rsyslog envoie déjà du JSON (template `RSYSLOG_DebugFormat` / JSON) ; un champ texte contenant du JSON n'est pas décodé. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |
 | `fingerprint` | oui | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
