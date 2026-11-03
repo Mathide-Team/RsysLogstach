@@ -95,6 +95,12 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
 
+Variables d'environnement du `.conf` (#122) : `${VAR}` et `${VAR:défaut}` sont
+substitués au chargement, comme Logstash — la variable définie prime sur la
+valeur par défaut ; une variable non définie sans défaut refuse le démarrage
+(`ValueError` qui la nomme). `%{champ}` (rendu par événement) n'est pas
+concerné.
+
 Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. `clone` et `split` restent sans effet.
 
 Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.

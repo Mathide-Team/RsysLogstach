@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from logstash_pipeline_parser.tree import ParseError
 
-from interpreter import PipelineInterpreter
+from interpreter import PipelineInterpreter, substituer_variables_environnement
 
 
 class TestParse:
@@ -196,6 +196,74 @@ class TestFilterKV:
         doc = {"message": 123}
         interp.apply(doc)
         assert doc == {"message": 123}
+
+
+class TestVariablesEnvironnement:
+    """`${VAR}` / `${VAR:défaut}` au chargement du `.conf` (#122)."""
+
+    def test_substitution_dans_une_valeur(self, monkeypatch) -> None:
+        monkeypatch.setenv("RSYSLOGSTACH_TEST_ENV", "valeur")
+        conf = """
+        filter {
+            mutate { add_field => { "champ" => "${RSYSLOGSTACH_TEST_ENV}" } }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {}
+        interp.apply(doc)
+        assert doc == {"champ": "valeur"}
+
+    def test_valeur_par_defaut_si_variable_absente(self, monkeypatch) -> None:
+        monkeypatch.delenv("RSYSLOGSTACH_TEST_ENV", raising=False)
+        conf = 'filter { mutate { add_field => { "champ" => "${RSYSLOGSTACH_TEST_ENV:défaut}" } } }'
+        doc = {}
+        PipelineInterpreter(conf).apply(doc)
+        assert doc == {"champ": "défaut"}
+
+    def test_variable_definie_prime_sur_le_defaut(self, monkeypatch) -> None:
+        monkeypatch.setenv("RSYSLOGSTACH_TEST_ENV", "valeur")
+        conf = 'filter { mutate { add_field => { "champ" => "${RSYSLOGSTACH_TEST_ENV:défaut}" } } }'
+        doc = {}
+        PipelineInterpreter(conf).apply(doc)
+        assert doc == {"champ": "valeur"}
+
+    def test_variable_absente_sans_defaut_refuse(self, monkeypatch) -> None:
+        monkeypatch.delenv("RSYSLOGSTACH_TEST_ENV", raising=False)
+        conf = 'filter { mutate { add_field => { "champ" => "${RSYSLOGSTACH_TEST_ENV}" } } }'
+        with pytest.raises(ValueError, match="RSYSLOGSTACH_TEST_ENV"):
+            PipelineInterpreter(conf)
+
+    def test_variables_manquantes_toutes_nommees(self, monkeypatch) -> None:
+        monkeypatch.delenv("RSYSLOGSTACH_TEST_A", raising=False)
+        monkeypatch.delenv("RSYSLOGSTACH_TEST_B", raising=False)
+        conf = 'filter { mutate { add_field => { "a" => "${RSYSLOGSTACH_TEST_A}" "b" => "${RSYSLOGSTACH_TEST_B}" } } }'
+        with pytest.raises(ValueError, match="RSYSLOGSTACH_TEST_A, RSYSLOGSTACH_TEST_B"):
+            PipelineInterpreter(conf)
+
+    def test_gabarit_sprintf_non_concerne(self) -> None:
+        # `%{champ}` est rendu par événement : aucun `${}` dans le .conf,
+        # la substitution ne doit pas y toucher.
+        conf = 'filter { mutate { add_field => { "x" => "%{champ}" } } }'
+        doc = {"champ": "valeur"}
+        PipelineInterpreter(conf).apply(doc)
+        assert doc == {"champ": "valeur", "x": "valeur"}
+
+    def test_nom_invalide_laisse_telle_quelle(self) -> None:
+        conf = 'filter { mutate { add_field => { "champ" => "${1invalide}" } } }'
+        doc = {}
+        PipelineInterpreter(conf).apply(doc)
+        assert doc == {"champ": "${1invalide}"}
+
+    def test_substitution_dans_un_tableau(self, monkeypatch) -> None:
+        monkeypatch.setenv("RSYSLOGSTACH_TEST_HOST", "h1.exemple")
+        conf = 'filter { mutate { add_field => { "hotes" => ["${RSYSLOGSTACH_TEST_HOST}", "fixe"] } } }'
+        doc = {}
+        PipelineInterpreter(conf).apply(doc)
+        assert doc == {"hotes": ["h1.exemple", "fixe"]}
+
+    def test_fonction_directe_sans_variable(self) -> None:
+        assert substituer_variables_environnement("sans variable") == "sans variable"
+        assert substituer_variables_environnement("") == ""
 
 
 class TestFilterMutate:
