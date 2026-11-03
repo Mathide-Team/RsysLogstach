@@ -49,7 +49,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 |---|---|---|
 | `mutate` | fait | Ordre officiel : `coerce`, `rename`, `update`, `replace`, `convert`, `gsub`, `uppercase`, `capitalize`, `lowercase`, `strip`, `split`, `join`, `merge`, `copy`, puis options communes. `tag_on_failure` (défaut `_mutate_error`). |
 | `dissect` | partiel | `mapping` seulement ; `convert_datatype` et `tag_on_failure` non lus. |
-| `date` | partiel | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `tag_on_failure`. Pas de `SSS` (millisecondes) ni de fuseau textuel (`z`, « CET »). `locale` non lu. |
+| `date` | fait | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `locale` (`fr`), `tag_on_failure`. `SSS` (millisecondes) et fuseaux textuels `z`/`ZZZ` (« CET », IDs IANA) reconnus (#118) ; les abréviations couvertes sont réduites (zones européennes et nord-américaines courantes). Autres lettres Java Time (E, W, D…) : #123. |
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
 | `translate` | partiel | `source`, `target`, `dictionary_path` (YAML), `fallback` (gabarit sprintf). Non lus : `dictionary` en ligne, `exact`, `regex`, `override`, `refresh_behaviour`, `iterate_on`. |
 | `drop` | fait | `percentage` compris. |

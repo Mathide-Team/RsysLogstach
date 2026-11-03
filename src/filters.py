@@ -30,7 +30,7 @@ from __future__ import annotations
 import re
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -974,9 +974,14 @@ class TranslateFilter:
 
 # Jetons Java/Joda reconnus par `translate_date_pattern`, traduits en
 # motif `strptime` de la bibliothèque standard. Portée délibérément
-# réduite (voir la docstring de `translate_date_pattern`) : ni `SSS`
-# (millisecondes Java, incompatibles avec `%f` qui attend des
-# MICROsecondes), ni `z`/`zzz` (nom de fuseau textuel ambigu, ex. "CET").
+# réduite (voir la docstring de `translate_date_pattern`) : ni les
+# lettres ambigues restantes de Java Time (E, W, D, h…, voir #123), ni
+# les fractions autres que `SSS`. `SSS` (millisecondes Java) devient
+# `%f`, qui met à l'échelle pareil : "123" → 123000 microsecondes, soit
+# exactement 123 millisecondes. `z`/`zz`/`zzz`/`ZZZ` (nom de fuseau
+# textuel, ex. "CET", "Europe/Paris") deviennent `%Z` — le nom est
+# remplacé par "UTC" dans le texte avant analyse (voir
+# `parse_date_value`), `%Z` ne connaissant que UTC/GMT.
 DATE_PATTERN_TOKENS: dict[str, str] = {
     "yyyy": "%Y",
     "yy": "%y",
@@ -988,6 +993,7 @@ DATE_PATTERN_TOKENS: dict[str, str] = {
     "hh": "%I",
     "mm": "%M",
     "ss": "%S",
+    "SSS": "%f",
     "EEEE": "%A",
     "EEE": "%a",
     "a": "%p",
@@ -995,7 +1001,143 @@ DATE_PATTERN_TOKENS: dict[str, str] = {
     "XX": "%z",
     "X": "%z",
     "Z": "%z",
+    "ZZZ": "%Z",
+    "zzz": "%Z",
+    "zz": "%Z",
+    "z": "%Z",
 }
+
+# Abréviations de fuseaux textuels (jetons `z`/`ZZZ`, #118) : portée
+# réduite aux abréviations courantes des zones européennes et
+# nord-américaines, en heures d'été comme d'hiver — un nom IANA complet
+# (« Europe/Paris ») passe par `ZoneInfo`, pas par cette table.
+ZONE_ABBREVIATIONS: dict[str, int] = {
+    "UTC": 0,
+    "GMT": 0,
+    "WET": 0,
+    "CET": 1,
+    "WEST": 1,
+    "CEST": 2,
+    "EET": 2,
+    "EEST": 3,
+    "EST": -5,
+    "EDT": -4,
+    "CST": -6,
+    "CDT": -5,
+    "MST": -7,
+    "MDT": -6,
+    "PST": -8,
+    "PDT": -7,
+}
+
+# Noms de mois/jours locaux pour l'option `locale` du plugin `date`
+# (#118) : portée réduite à `fr` (l'anglais est le comportement par
+# défaut de strptime), traduits vers les noms anglais attendus par
+# `%b`/`%B`/`%a`/`%A` (insensibles à la casse). Le remplacement se fait
+# dans le TEXTE avant analyse — pas de `setlocale` global (non
+# réentrant, indisponible selon le système).
+DATE_LOCALE_NAMES: dict[str, dict[str, dict[str, str]]] = {
+    "fr": {
+        "abbr": {
+            "janv.": "Jan",
+            "févr.": "Feb",
+            "mars": "Mar",
+            "avr.": "Apr",
+            "mai": "May",
+            "juin": "Jun",
+            "juil.": "Jul",
+            "août": "Aug",
+            "sept.": "Sep",
+            "oct.": "Oct",
+            "nov.": "Nov",
+            "déc.": "Dec",
+            "lun.": "Mon",
+            "mar.": "Tue",
+            "mer.": "Wed",
+            "jeu.": "Thu",
+            "ven.": "Fri",
+            "sam.": "Sat",
+            "dim.": "Sun",
+        },
+        "full": {
+            "janvier": "January",
+            "février": "February",
+            "mars": "March",
+            "avril": "April",
+            "mai": "May",
+            "juin": "June",
+            "juillet": "July",
+            "août": "August",
+            "septembre": "September",
+            "octobre": "October",
+            "novembre": "November",
+            "décembre": "December",
+            "lundi": "Monday",
+            "mardi": "Tuesday",
+            "mercredi": "Wednesday",
+            "jeudi": "Thursday",
+            "vendredi": "Friday",
+            "samedi": "Saturday",
+            "dimanche": "Sunday",
+        },
+    }
+}
+
+# Jeton de nom de fuseau (`z`, `zz`, `zzz`, `ZZZ`) dans un motif
+# Java/Joda : lettres seules, pas au milieu d'un autre jeton.
+_ZONE_NAME_TOKEN_RE = re.compile(r"(?<![A-Za-z])(?:ZZZ|zzz|zz|z)(?![A-Za-z])")
+# Nom IANA (« Europe/Paris ») ou abréviation en majuscules (« CET »).
+_ZONE_ID_RE = re.compile(r"[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)+")
+_ZONE_ABBREV_RE = re.compile(r"\b[A-Z]{2,5}\b")
+
+
+@traced
+def _find_zone_name(text: str) -> str | None:
+    """Trouve un nom de fuseau textuel dans `text` (jetons `z`/`ZZZ`).
+
+    Un ID IANA (« Europe/Paris ») est retenu tel quel s'il est reconnu
+    par `ZoneInfo` ; sinon la première abréviation en majuscules
+    connue de `ZONE_ABBREVIATIONS` l'emporte (« CET »). `None` si le
+    texte n'en contient aucun — `parse_date_value` traite ça comme un
+    échec de correspondance du motif, comme une valeur qui ne collerait
+    pas au reste du motif.
+    """
+    id_match = _ZONE_ID_RE.search(text)
+    if id_match:
+        try:
+            ZoneInfo(id_match.group(0))
+            return id_match.group(0)
+        except (ZoneInfoNotFoundError, ValueError):
+            logger.debug("date : ID de fuseau inconnu : {}", id_match.group(0))
+    for abbrev_match in _ZONE_ABBREV_RE.finditer(text):
+        if abbrev_match.group(0) in ZONE_ABBREVIATIONS:
+            return abbrev_match.group(0)
+    return None
+
+
+@traced
+def _apply_zone_name(dt: datetime, name: str) -> datetime:
+    """Applique le fuseau `name` (abréviation ou ID IANA) à `dt`, naïf."""
+    if "/" in name:
+        try:
+            return dt.replace(tzinfo=ZoneInfo(name))
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            # Défensif : déjà validé par `_find_zone_name`.
+            logger.warning(_("date : fuseau {name} devenu inconnu, UTC retenu erreur={error}"), name=name, error=exc)
+            return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=timezone(timedelta(hours=ZONE_ABBREVIATIONS[name])))
+
+
+@traced
+def _replace_locale_names(text: str, mapping: dict[str, str]) -> str:
+    """Remplace dans `text` les noms locaux par leurs équivalents anglais.
+
+    Insensible à la casse (comme `%b`/`%a` de strptime), aux bords de
+    mots, noms les plus longs d'abord (« juillet » avant « juil. »).
+    """
+    for key in sorted(mapping, key=len, reverse=True):
+        text = re.sub(rf"(?<!\w){re.escape(key)}(?!\w)", mapping[key], text, flags=re.IGNORECASE)
+    return text
 
 
 @traced
@@ -1061,7 +1203,7 @@ def translate_date_pattern(pattern: str) -> str | None:
 
 
 @traced
-def parse_date_value(text: str, pattern: str, tz_name: str | None) -> datetime | None:
+def parse_date_value(text: str, pattern: str, tz_name: str | None, locale: str | None = None) -> datetime | None:
     """Tente de parser `text` selon `pattern` (une entrée de `match` du plugin `date`).
 
     Trois formes reconnues, comme Logstash : `"ISO8601"`
@@ -1073,13 +1215,23 @@ def parse_date_value(text: str, pattern: str, tz_name: str | None) -> datetime |
     pour que l'appelant (`DateFilter.apply`) puisse
     essayer le motif suivant de `match` sans distinguer ces cas.
 
-    Un résultat SANS fuseau (motif sans `Z`/`X`) reçoit `tz_name` (nom
+    Un résultat SANS fuseau (motif sans `Z`/`X`/`z`) reçoit `tz_name` (nom
     IANA, `zoneinfo.ZoneInfo`) s'il est fourni et reconnu, sinon UTC —
     comme Logstash. Un `ZoneInfoNotFoundError` (nom de fuseau inconnu, ex.
     faute de frappe dans le `.conf`) retombe silencieusement sur UTC
     plutôt que de faire échouer le parsing entier pour une erreur de
     configuration distincte.
+
+    `SSS` (millisecondes) et les noms de fuseaux textuels `z`/`ZZZ`
+    (« CET », « Europe/Paris ») sont reconnus (#118) : le nom trouvé
+    dans le texte est remplacé par « UTC » avant `strptime` (`%Z` ne
+    connaît que UTC/GMT) puis réappliqué comme fuseau — il prime sur
+    `timezone`, comme un fuseau explicite dans la valeur. `locale`
+    (option du plugin officiel, `fr` prise en charge) traduit d'abord les
+    noms de mois/jours locaux en anglais — les seuls que `strptime`
+    sache lire — sans `setlocale` global (non réentrant).
     """
+    zone_name: str | None = None
     try:
         if pattern == "ISO8601":
             normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
@@ -1090,7 +1242,24 @@ def parse_date_value(text: str, pattern: str, tz_name: str | None) -> datetime |
             strptime_pattern = translate_date_pattern(pattern)
             if strptime_pattern is None:
                 return None
+            if _ZONE_NAME_TOKEN_RE.search(pattern):
+                zone_name = _find_zone_name(text)
+                if zone_name is None:
+                    logger.debug("date : motif {} attend un nom de fuseau, aucun trouvé dans {!r}", pattern, text)
+                    return None
+                text = text.replace(zone_name, "UTC", 1)
+            if locale and locale.lower() != "en":
+                table = DATE_LOCALE_NAMES.get(locale.lower())
+                if table is None:
+                    logger.debug("date : locale {} non prise en charge, noms anglais retenus", locale)
+                else:
+                    if "%b" in strptime_pattern or "%a" in strptime_pattern:
+                        text = _replace_locale_names(text, table["abbr"])
+                    if "%B" in strptime_pattern or "%A" in strptime_pattern:
+                        text = _replace_locale_names(text, table["full"])
             dt = datetime.strptime(text, strptime_pattern)
+            if zone_name is not None and dt.tzinfo is None:
+                dt = _apply_zone_name(dt, zone_name)
     except (ValueError, OverflowError, OSError) as exc:
         logger.debug("date : valeur non analysable ({!r}) : {}", text, exc)
         return None
@@ -1125,6 +1294,8 @@ class DateFilter:
     - `target` : champ écrit, `"@timestamp"` par défaut, toujours en
       chaîne ISO8601 UTC (document sérialisable en JSON tel quel) ;
     - `timezone` : nom IANA appliqué à une date sans fuseau ;
+    - `locale` (#118) : langue des noms de mois/jours du motif (`fr`
+      pris en charge, anglais par défaut — pas de `setlocale` global) ;
     - `tag_on_failure` : tags ajoutés si rien ne correspond (champ absent,
       `None`, ou aucun motif), `["_dateparsefailure"]` par défaut.
 
@@ -1164,11 +1335,12 @@ class DateFilter:
             return False
         text = str(value)
         tz_name = self._options.get("timezone")
+        locale = self._options.get("locale")
         parsed: datetime | None = None
         for pattern in match[1:]:
             if not isinstance(pattern, str):
                 continue
-            parsed = parse_date_value(text, pattern, tz_name)
+            parsed = parse_date_value(text, pattern, tz_name, locale=locale)
             if parsed is not None:
                 break
         if parsed is None:

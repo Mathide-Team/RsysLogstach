@@ -73,7 +73,7 @@ Voir `filters.example.json` :
 ]
 ```
 
-Step `date` (#34), mêmes options que le plugin `date` de Logstash : `{"type": "date", "match": ["horodatage", "ISO8601", "MMM dd HH:mm:ss"], "timezone": "Europe/Paris"}` écrit `@timestamp` (ou `target`) en ISO8601 UTC, et ajoute `_dateparsefailure` (ou `tag_on_failure`) aux tags si aucun motif ne correspond. `grok` n'est pas proposé : un step `regex` à groupes nommés le remplace.
+Step `date` (#34), mêmes options que le plugin `date` de Logstash : `{"type": "date", "match": ["horodatage", "ISO8601", "MMM dd HH:mm:ss"], "timezone": "Europe/Paris"}` écrit `@timestamp` (ou `target`) en ISO8601 UTC, et ajoute `_dateparsefailure` (ou `tag_on_failure`) aux tags si aucun motif ne correspond. Motifs `SSS` (millisecondes) et `z`/`ZZZ` (fuseau textuel : « CET », « Europe/Paris ») reconnus, ainsi que l'option `locale` (`fr` : noms de mois/jours français, #118). `grok` n'est pas proposé : un step `regex` à groupes nommés le remplace.
 
 ### Enrichissement (`enrich-dict.example.json`)
 
