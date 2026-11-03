@@ -28,7 +28,8 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | tracing |
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, templates, tracing, util |
+| `grok.py` | `GrokFilter` — filtre `grok` natif, motifs de base (#112) | i18n, templates, tracing, util |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, grok, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
 
@@ -298,7 +299,7 @@ Le `Makefile` exécute les mêmes commandes que la CI ; le seuil de couverture
 
 RsysLogstach est publié sous **GPL-3.0-or-later**. Le texte officiel de la GPLv3 se trouve dans [`LICENSE`](LICENSE), `pyproject.toml` déclare `license = "GPL-3.0-or-later"`, et chaque fichier de code porte l'en-tête `# SPDX-License-Identifier: GPL-3.0-or-later`.
 
-Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont réimplémentés à partir de la documentation publique. Les dépendances ne sont pas embarquées, et leurs licences sont compatibles avec la GPLv3 :
+Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont réimplémentés à partir de la documentation publique. Seule exception, les motifs grok de base de `src/grok.py` sont repris de [logstash-patterns-core](https://github.com/logstash-plugins/logstash-patterns-core) (`patterns/legacy/grok-patterns`, Apache-2.0, compatible avec la GPLv3), avec la mention d'origine dans le module (#112). Les dépendances ne sont pas embarquées, et leurs licences sont compatibles avec la GPLv3 :
 
 | Dépendance | Licence |
 |---|---|

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 11:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:04+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -28,6 +28,19 @@ msgstr "unreadable translate dictionary: {} ({})"
 #: src/filters.py
 msgid "exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"
 msgstr "exception while applying the mutate filter, remaining operations skipped: {}"
+
+#: src/grok.py
+#
+msgid "grok : fichier de motifs illisible, ignoré : {} ({})"
+msgstr "grok: unreadable pattern file, ignored: {} ({})"
+
+#: src/grok.py
+msgid "grok : motif ignoré : {}"
+msgstr "grok: pattern ignored: {}"
+
+#: src/grok.py
+msgid "grok : patterns_dir illisible, ignoré : {} ({})"
+msgstr "grok: unreadable patterns_dir, ignored: {} ({})"
 
 #: src/indexer.py
 #, python-brace-format

@@ -36,7 +36,8 @@ src/
 ├── dlq.py             LocalDeadLetterQueue — JSONL append-only — dépend de tracing
 ├── enrichment.py      Enrichissement par dictionnaire + GeoIP — dépend de templates, tracing
 ├── filters.py         FilterPipeline (drop, regex, kv, mutate, geoip) — dépend de util, enrichment, tracing
-├── interpreter.py     PipelineInterpreter (--pipeline-conf) — dépend de filters, util, tracing
+├── grok.py            GrokFilter (grok natif, #112) — dépend de templates, util, i18n, tracing
+├── interpreter.py     PipelineInterpreter (--pipeline-conf) — dépend de filters, grok, util, tracing
 └── indexer.py         OpenSearchIndexer — dépend de util, dlq, tracing
 ```
 

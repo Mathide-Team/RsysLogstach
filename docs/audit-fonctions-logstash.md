@@ -53,7 +53,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
 | `translate` | partiel | `source`, `target`, `dictionary_path` (YAML), `fallback` (gabarit sprintf). Non lus : `dictionary` en ligne, `exact`, `regex`, `override`, `refresh_behaviour`, `iterate_on`. |
 | `drop` | fait | `percentage` compris. |
-| `grok` | pas fait | Remplacé par un step `regex` à groupes nommés dans `--filters`, ou appelé via `filters_json`. |
+| `grok` | fait | Bloc natif (#112, `src/grok.py`) : motifs de base legacy de logstash-patterns-core (IP, NUMBER, SYSLOGBASE, COMBINEDAPACHELOG…), `%{SYNTAXE:champ:int|float}`, captures `(?<nom>…)`, `match` (hash ou tableau), `break_on_match`, `overwrite`, `keep_empty_captures`, `target`, `pattern_definitions`, `patterns_dir`, `tag_on_failure`. Non lus : `timeout_millis`, `ecs_compatibility`, `named_captures_only => false`. |
 | `kv` | pas fait | Disponible dans `--filters` (step `kv`) et via `filters_json`, pas en bloc natif. |
 | `json` | pas fait | rsyslog envoie déjà du JSON (template `RSYSLOG_DebugFormat` / JSON) ; un champ texte contenant du JSON n'est pas décodé. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |

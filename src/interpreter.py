@@ -253,6 +253,7 @@ from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import DateFilter, Dissector, FilterPipeline, apply_common_options, apply_mutate
+from grok import GrokFilter
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -313,6 +314,8 @@ class PipelineInterpreter:
         """
         self._ast: list = Pipeline(pipeline_source).parse()
         self._dissect_cache: dict[str, Dissector] = {}
+        # #112 : un GrokFilter compilé par bloc grok du pipeline (clé id(entry)).
+        self._grok_cache: dict[int, GrokFilter] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
@@ -465,6 +468,8 @@ class PipelineInterpreter:
             reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
+        elif name == "grok":
+            reussi = self._apply_grok(entry, doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -472,6 +477,15 @@ class PipelineInterpreter:
         if reussi:
             apply_common_options(doc, options, now=now, on_missing=on_missing)
         logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
+
+    @traced
+    def _apply_grok(self, entry: list, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`grok { match => … }` natif (#112) — voir `grok.GrokFilter`, compilé une fois par bloc."""
+        filtre = self._grok_cache.get(id(entry))
+        if filtre is None:
+            filtre = GrokFilter(options)
+            self._grok_cache[id(entry)] = filtre
+        return filtre.apply(doc)
 
     @traced
     def _apply_drop(self, options: dict[str, Any]) -> None:

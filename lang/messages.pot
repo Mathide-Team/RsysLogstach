@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 11:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:04+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -27,6 +27,18 @@ msgstr ""
 
 #: src/filters.py
 msgid "dictionnaire translate illisible : {} ({})"
+msgstr ""
+
+#: src/grok.py
+msgid "grok : patterns_dir illisible, ignoré : {} ({})"
+msgstr ""
+
+#: src/grok.py
+msgid "grok : fichier de motifs illisible, ignoré : {} ({})"
+msgstr ""
+
+#: src/grok.py
+msgid "grok : motif ignoré : {}"
 msgstr ""
 
 #: src/indexer.py
