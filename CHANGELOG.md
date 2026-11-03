@@ -18,6 +18,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 ### Ajouté
 - Plugins `filter{}` simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`,
   `uuid`, `syslog_pri`, `truncate` (module `simples.py`).
+- `dissect` natif (#117) : `convert_datatype` (`int`, `float`) et `tag_on_failure`
+  (défaut `_dissectfailure`). Un échec de découpage est désormais tagué, comme
+  Logstash, au lieu d'être ignoré en silence.
 - Filtre `json { … }` natif dans `--pipeline-conf` (#115) : `source`, `target`,
   `skip_on_invalid_json`, `tag_on_failure`.
 - Filtre `fingerprint { … }` natif dans `--pipeline-conf` (#114) : méthodes

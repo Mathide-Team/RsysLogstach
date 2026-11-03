@@ -342,6 +342,23 @@ class _DocumentDropped(Exception):
     """
 
 
+@traced
+def _convertir_dissect(doc: dict[str, Any], champ: str, type_cible: Any) -> None:
+    """`convert_datatype` de dissect (#117) : `int` ou `float`, valeur laissée telle quelle si impossible."""
+    chemin = parse_field_path(champ)
+    valeur = resolve_field(doc, chemin)
+    if valeur is _MISSING:
+        return
+    convertisseurs = {"int": int, "float": float}
+    if type_cible not in convertisseurs:
+        logger.warning(_("dissect : type {} inconnu pour convert_datatype"), type_cible)
+        return
+    try:
+        assign_field(doc, chemin, convertisseurs[type_cible](valeur))
+    except (TypeError, ValueError):
+        logger.warning(_("dissect : conversion impossible de {} en {}"), champ, type_cible)
+
+
 class PipelineInterpreter:
     """Interprète un pipeline Logstash complet, structure via `logstash_pipeline_parser`.
 
@@ -647,32 +664,56 @@ class PipelineInterpreter:
 
     @traced
     def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
-        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`.
+        """`dissect { mapping convert_datatype tag_on_failure }` — réutilise `filters.Dissector`.
+
+        Comme le filtre officiel (#117) : un champ source absent, vide ou non
+        texte, ou un patron qui ne s'applique pas, ajoute `tag_on_failure`
+        (défaut `_dissectfailure`) et coupe `convert_datatype` et les options
+        communes. Sinon `convert_datatype` (`int`, `float`) convertit les
+        champs indiqués.
 
         Returns:
-            True si au moins un patron a été découpé (options communes, #116).
+            True sans échec et avec au moins `mapping` ou `convert_datatype`
+            (options communes, #116).
         """
-        reussi = False
         mapping = options.get("mapping")
-        if not isinstance(mapping, dict):
-            return False
+        conversions = options.get("convert_datatype")
+        mapping = mapping if isinstance(mapping, dict) else {}
+        conversions = conversions if isinstance(conversions, dict) else {}
+        echec = False
         for source_field, pattern in mapping.items():
-            value = doc.get(source_field)
-            if not isinstance(value, str) or not isinstance(pattern, str):
-                continue
-            dissector = self._dissect_cache.get(pattern)
+            dissector = self._dissector(pattern)
             if dissector is None:
-                try:
-                    dissector = Dissector(pattern)
-                except ValueError:
-                    logger.debug("patron dissect invalide, ignoré : {}", pattern)
-                    continue
-                self._dissect_cache[pattern] = dissector
-            extracted = dissector.apply(value)
-            if extracted is not None:
-                doc.update(extracted)
-                reussi = True
-        return reussi
+                continue
+            value = resolve_field(doc, parse_field_path(source_field))
+            extracted = dissector.apply(value) if isinstance(value, str) and value else None
+            if extracted is None:
+                logger.warning(_("dissect : échec sur le champ {}"), source_field)
+                echec = True
+                continue
+            for champ, texte in extracted.items():
+                assign_field(doc, parse_field_path(champ), texte)
+        if echec:
+            add_failure_tags(doc, options.get("tag_on_failure", ["_dissectfailure"]))
+            return False
+        for champ, type_cible in conversions.items():
+            _convertir_dissect(doc, champ, type_cible)
+        return bool(mapping or conversions)
+
+    @traced
+    def _dissector(self, pattern: Any) -> Dissector | None:
+        """Compile (avec cache) un patron dissect ; None si le patron est invalide."""
+        if not isinstance(pattern, str):
+            return None
+        dissector = self._dissect_cache.get(pattern)
+        if dissector is None:
+            try:
+                dissector = Dissector(pattern)
+            except ValueError:
+                logger.debug("patron dissect invalide, ignoré : {}", pattern)
+                return None
+            self._dissect_cache[pattern] = dissector
+        return dissector
 
     @traced
     def _apply_kv(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:

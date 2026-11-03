@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:21+0000\n"
+"POT-Creation-Date: 2026-11-03 12:23+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -38,6 +38,19 @@ msgstr "OpenSearch indexing failed permanently error={error}"
 #, python-brace-format
 msgid "Indexation OpenSearch échouée erreur={error}"
 msgstr "OpenSearch indexing failed error={error}"
+
+#
+#: src/interpreter.py
+msgid "dissect : conversion impossible de {} en {}"
+msgstr "dissect: cannot convert {} to {}"
+
+#: src/interpreter.py
+msgid "dissect : type {} inconnu pour convert_datatype"
+msgstr "dissect: unknown type {} for convert_datatype"
+
+#: src/interpreter.py
+msgid "dissect : échec sur le champ {}"
+msgstr "dissect: failure on field {}"
 
 #: src/interpreter.py
 msgid "fingerprint ignoré : {}"
@@ -271,6 +284,7 @@ msgstr "Maximum age of a rotated file"
 msgid "Échec inattendu du traitement d'un message erreur={error}"
 msgstr "Unexpected failure while processing a message error={error}"
 
+#
 #: src/simples.py
 #
 msgid "cidr : lecture impossible de {} : {}"
@@ -286,12 +300,14 @@ msgstr "cidr: invalid network ignored: {}"
 msgid "csv : analyse impossible du champ {} : {}"
 msgstr "csv: cannot parse field {}: {}"
 
+#
 #: src/simples.py
 #
 msgid "csv : conversion impossible de {} en {}"
 msgstr "csv: cannot convert {} to {}"
 
 #: src/simples.py
+#
 msgid "csv : type {} inconnu pour convert"
 msgstr "csv: unknown type {} for convert"
 
@@ -303,7 +319,9 @@ msgstr "syslog_pri: invalid value {}"
 msgid "truncate ignoré : length_bytes doit être un entier positif"
 msgstr "truncate ignored: length_bytes must be a positive integer"
 
+#
 #: src/simples.py
+#
 msgid "urldecode : décodage impossible : {}"
 msgstr "urldecode: cannot decode: {}"
 
