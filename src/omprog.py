@@ -53,6 +53,7 @@ from i18n import _
 from indexer import OpenSearchIndexer, SendOutcome
 from interpreter import PipelineInterpreter
 from metrics import Metrics
+from templates import ESCAPE_STYLES, set_escape_style
 from tracing import traced
 from util import load_json_file, opensearch_auth_from_env
 
@@ -100,6 +101,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="keep",
         # xgettext:no-python-brace-format (« %%{champ} » : syntaxe des gabarits, pas un champ de format)
         help=_("Rendu d'un %%{champ} absent dans le pipeline (défaut : keep)"),
+    )
+    parser.add_argument(
+        "--field-reference-escape-style",
+        choices=ESCAPE_STYLES,
+        default="none",
+        help=_("Crochets échappés dans les noms de champs, comme field_reference.escape_style (défaut : none)"),
     )
 
     g = parser.add_argument_group(_("enrichissement"))
@@ -386,6 +393,7 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
         enrichers.append(DictEnricher(load_json_file(args.enrich_dict), args.enrich_key_field, args.enrich_out_field))
     if args.geoip_db:
         enrichers.append(GeoIPEnricher(args.geoip_db, args.geoip_ip_field, args.geoip_out_field))
+    set_escape_style(args.field_reference_escape_style)  # #124, avant toute lecture de gabarit
     interpreter = PipelineInterpreter(read_pipeline_source(args.pipeline_conf)) if args.pipeline_conf else None
 
     fingerprint_fields: list[str] | None = None

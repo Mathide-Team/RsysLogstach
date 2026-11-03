@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:53+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -136,6 +136,10 @@ msgstr ""
 
 #: src/omprog.py
 msgid "Clé privée non chiffrée du certificat client (option tls_key de Logstash)"
+msgstr ""
+
+#: src/omprog.py
+msgid "Crochets échappés dans les noms de champs, comme field_reference.escape_style (défaut : none)"
 msgstr ""
 
 #: src/omprog.py

@@ -66,6 +66,17 @@ from tracing import traced
 
 _MISSING = object()  # sentinelle : distingue "champ absent" de "champ présent valant None"
 
+# Issue #124 : `field_reference.escape_style` de Logstash — séquences qui
+# désignent un crochet littéral dans un nom de champ. Réglage global au
+# processus (comme logstash.yml), choisi par `--field-reference-escape-style`.
+ESCAPE_STYLES = ("none", "percent", "ampersand")
+_ECHAPPEMENTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "none": (),
+    "percent": (("%5B", "["), ("%5D", "]")),
+    "ampersand": (("&#91;", "["), ("&#93;", "]")),
+}
+_REGLAGES = {"escape_style": "none"}
+
 
 @dataclass(frozen=True)
 class _Token:
@@ -170,6 +181,31 @@ def render_template(
 
 
 @traced
+def set_escape_style(style: str) -> None:
+    """Choisit le style d'échappement des crochets dans les noms de champs (#124).
+
+    Args:
+        style: `none` (défaut), `percent` (`%5B`, `%5D`) ou `ampersand`
+            (`&#91;`, `&#93;`), comme `field_reference.escape_style`.
+
+    Raises:
+        ValueError: Style inconnu.
+    """
+    if style not in ESCAPE_STYLES:
+        raise ValueError(f"field_reference.escape_style inconnu : {style!r}")
+    _REGLAGES["escape_style"] = style
+    logger.debug("set_escape_style: {}", style)
+
+
+@traced
+def _desechapper(segment: str) -> str:
+    """Remplace les crochets échappés d'un segment selon le style courant."""
+    for sequence, crochet in _ECHAPPEMENTS[_REGLAGES["escape_style"]]:
+        segment = segment.replace(sequence, crochet)
+    return segment
+
+
+@traced
 def parse_field_path(expr: str) -> list[str]:
     """Interprète l'intérieur d'une référence %{...} en chemin de champ.
 
@@ -194,7 +230,7 @@ def parse_field_path(expr: str) -> list[str]:
         # invalide, pas un nom de champ littéral.
         if "[" in expr or "]" in expr:
             raise ValueError(f"chemin de champ mal formé (crochet dans un nom simple): {expr!r}")
-        return [expr]
+        return [_desechapper(expr)]
     segments: list[str] = []
     rest = expr
     while rest:
@@ -207,7 +243,7 @@ def parse_field_path(expr: str) -> list[str]:
         if not segment or "[" in segment:
             # « [] » (segment vide) et « [a[b]] » (crochets imbriqués) : refusés par Logstash.
             raise ValueError(f"chemin de champ mal formé (segment vide ou imbriqué): {expr!r}")
-        segments.append(segment)
+        segments.append(_desechapper(segment))
         rest = rest[end + 1 :]
     return segments
 

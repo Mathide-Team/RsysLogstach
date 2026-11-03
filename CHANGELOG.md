@@ -16,6 +16,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- `--field-reference-escape-style` (#124) : crochets échappés (`percent`,
+  `ampersand`) dans les noms de champs, comme `field_reference.escape_style`.
 - **`dns` natif** (#121) dans les `.conf` : `resolve`, `reverse`, `action` (`append`/`replace`), `hostsfile`, `nameserver` (chaîne, liste ou hash `address`/`search`/`ndots`), `timeout`, `max_retries`, `tag_on_timeout`, caches des succès et des échecs avec durée de vie, noms IDNA. `RSYSLOGSTACH_DNS=off` coupe les requêtes réseau.
 - **`xml` natif** (#121) dans les `.conf` : `store_xml` (conversion façon XmlSimple, comme Logstash), `xpath` avec `namespaces` et `remove_namespaces`, `parse_options`, `force_array`, `force_content`, `suppress_empty`, tag `_xmlparsefailure`. Entités externes, DTD et XInclude jamais actifs.
 - **`useragent` natif** (#121) dans les `.conf` : analyse ua-parser (motifs uap-core), champs ECS (`[user_agent][name]`, `[version]`, `[device][name]`, `[os][name|version|full]`, détail des versions dans `[@metadata][filter][user_agent]`) ou anciens champs avec `ecs_compatibility => disabled` et `prefix`, options `target`, `regexes`, `lru_cache_size`.
