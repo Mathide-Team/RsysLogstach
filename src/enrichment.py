@@ -35,6 +35,9 @@ out_field fixe pour tout le processus) et l'enrichissement piloté par
 
 from __future__ import annotations
 
+import csv
+import json
+import os
 from typing import Any
 
 import geoip2.database
@@ -215,7 +218,7 @@ class GeoIPLookup:
 
 
 class TranslateDictionary:
-    """Charge un dictionnaire YAML externe (équivalent du plugin `translate` de Logstash).
+    """Charge un dictionnaire externe YAML, JSON ou CSV (équivalent du plugin `translate` de Logstash).
 
     Contrairement à `DictEnricher` (dictionnaire JSON, clé/sortie fixes,
     champs trouvés toujours fusionnés sous un même sous-objet), le plugin
@@ -226,39 +229,90 @@ class TranslateDictionary:
     sa cible (`target`) est un chemin de champ arbitraire choisi PAR bloc
     `translate {}`, pas un sous-objet fixe pour tout le pipeline. Cette
     classe se contente de charger le fichier et d'exposer une recherche
-    clé -> valeur ; `interpreter.py::PipelineInterpreter._apply_translate`
-    reste seul responsable de résoudre `source`/`target` (chemins
+    clé -> valeur ; `filters.TranslateFilter` (partagé par `--filters` et
+    `--pipeline-conf`) reste seul responsable de résoudre `source`/`target` (chemins
     `%{[a][b]}`, via `templates.py`) et de rendre le gabarit sprintf d'un
     `fallback` — cette classe n'a besoin de connaître ni l'un ni l'autre,
     d'où sa dépendance à `tracing` seule (voir la docstring du module).
 
-    Charge le fichier une seule fois à la construction (comme
-    `GeoIPEnricher` ouvre sa base mmdb une seule fois) : `refresh_behaviour`
-    (option réelle du plugin `translate`, ex. "replace") n'est PAS
-    honorée — un changement du fichier YAML sur disque en cours
-    d'exécution n'est jamais repris tant que le processus tourne (voir
-    FEATURES.md, "Limites connues").
+    Formats (#119), choisis par l'extension comme le plugin officiel :
+    `.yml`/`.yaml` (YAML), `.json` (objet JSON plat) et `.csv` (deux
+    colonnes, la première est la clé). Une autre extension est lue comme du
+    YAML (le plugin la refuse ; ce choix garde les dictionnaires existants).
+    Un fichier vide ou dont la racine n'est pas un mapping donne un
+    dictionnaire vide.
+
+    `recharger()` relit le fichier si sa date de modification a changé,
+    selon `refresh_behaviour` : `merge` (défaut du plugin, les entrées
+    retirées du fichier sont gardées) ou `replace`. Un fichier disparu ou
+    illisible au rechargement laisse l'ancien dictionnaire en place, comme
+    Logstash. `version` augmente à chaque rechargement effectif.
     """
 
     @traced
     def __init__(self, dictionary_path: str) -> None:
-        """Charge le fichier YAML.
+        """Charge le fichier.
 
         Args:
-            dictionary_path: Chemin d'un fichier YAML {clé: valeur}.
+            dictionary_path: Chemin d'un fichier YAML, JSON ou CSV {clé: valeur}.
 
         Raises:
             OSError: Fichier introuvable ou illisible.
             yaml.YAMLError: Contenu YAML malformé.
+            ValueError: Contenu JSON malformé (`json.JSONDecodeError`).
+            csv.Error: Contenu CSV malformé.
         """
-        with open(dictionary_path, encoding="utf-8") as handle:
-            loaded = yaml.safe_load(handle)
-        # Un fichier YAML vide (`safe_load` renvoie None) ou dont le
-        # contenu racine n'est pas un mapping (ex. une simple liste) est
-        # traité comme un dictionnaire vide plutôt que de faire échouer
-        # le chargement — même philosophie que `DictEnricher`, où une clé
-        # absente du mapping ne fait jamais échouer l'enrichissement.
-        self._mapping: dict[Any, Any] = loaded if isinstance(loaded, dict) else {}
+        self._path = dictionary_path
+        self._mtime = os.path.getmtime(dictionary_path)
+        self._mapping: dict[Any, Any] = self._lire()
+        self.version = 0
+        logger.debug("TranslateDictionary : {} entrée(s) lues dans {}", len(self._mapping), dictionary_path)
+
+    @property
+    def mapping(self) -> dict[Any, Any]:
+        """Entrées courantes du dictionnaire (clé -> valeur), sans copie."""
+        return self._mapping
+
+    @traced
+    def _lire(self) -> dict[Any, Any]:
+        """Lit le fichier selon son extension ; racine non mapping -> dictionnaire vide."""
+        chemin = self._path.lower()
+        with open(self._path, encoding="utf-8-sig", newline="") as handle:
+            if chemin.endswith(".json"):
+                contenu = handle.read()
+                loaded = json.loads(contenu) if contenu.strip() else {}
+            elif chemin.endswith(".csv"):
+                loaded = {ligne[0]: (ligne[1] if len(ligne) > 1 else None) for ligne in csv.reader(handle) if ligne}
+            else:
+                loaded = yaml.safe_load(handle)
+        # Un fichier vide (`safe_load` renvoie None) ou dont la racine n'est
+        # pas un mapping (ex. une simple liste) donne un dictionnaire vide
+        # plutôt qu'un échec — même philosophie que `DictEnricher`.
+        resultat = loaded if isinstance(loaded, dict) else {}
+        logger.debug("TranslateDictionary._lire : {} entrée(s)", len(resultat))
+        return resultat
+
+    @traced
+    def recharger(self, comportement: str = "merge") -> bool:
+        """Relit le fichier s'il a changé (`refresh_behaviour` : `merge` ou `replace`).
+
+        Returns:
+            True si le dictionnaire a été rechargé.
+        """
+        try:
+            mtime = os.path.getmtime(self._path)
+            if mtime == self._mtime:
+                logger.debug("TranslateDictionary.recharger : {} inchangé", self._path)
+                return False
+            nouveau = self._lire()
+        except (OSError, yaml.YAMLError, ValueError, csv.Error) as exc:
+            logger.debug("translate : rechargement impossible, ancien dictionnaire gardé : {} ({})", self._path, exc)
+            return False
+        self._mtime = mtime
+        self._mapping = nouveau if comportement == "replace" else {**self._mapping, **nouveau}
+        self.version += 1
+        logger.debug("TranslateDictionary.recharger : {} rechargé ({}, v{})", self._path, comportement, self.version)
+        return True
 
     @traced
     def lookup(self, key: Any) -> Any:

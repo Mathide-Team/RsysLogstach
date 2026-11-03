@@ -48,17 +48,19 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | Plugin | Fait / pas fait | Commentaires |
 |---|---|---|
 | `mutate` | fait | Ordre officiel : `coerce`, `rename`, `update`, `replace`, `convert`, `gsub`, `uppercase`, `capitalize`, `lowercase`, `strip`, `split`, `join`, `merge`, `copy`, puis options communes. `tag_on_failure` (défaut `_mutate_error`). |
-| `dissect` | partiel | `mapping` seulement ; `convert_datatype` et `tag_on_failure` non lus. |
+| `dissect` | fait | `mapping` (sources imbriquées comprises), `convert_datatype` (`int`, `float`) et `tag_on_failure` (défaut `_dissectfailure` : source absente, vide ou sans correspondance) (#117). Pas de référence indirecte `%{&champ}`. |
 | `date` | partiel | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `tag_on_failure`. Pas de `SSS` (millisecondes) ni de fuseau textuel (`z`, « CET »). `locale` non lu. |
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
-| `translate` | partiel | `source`, `target`, `dictionary_path` (YAML), `fallback` (gabarit sprintf). Non lus : `dictionary` en ligne, `exact`, `regex`, `override`, `refresh_behaviour`, `iterate_on`. |
+| `translate` | fait | #119 : `source`/`field`, `target`/`destination` (défaut en place, `translation` si `ecs_compatibility => disabled`), `dictionary` en ligne, `dictionary_path` (YAML, JSON, CSV), `exact`, `regex`, `override`, `fallback` (gabarit sprintf), `iterate_on` (tableau de valeurs ou d'objets), `refresh_interval`, `refresh_behaviour` (`merge`/`replace`). Rechargement au premier document après l'intervalle (pas de minuterie) ; `yaml_dictionary_code_point_limit` et `yaml_load_strategy` sans effet ; clés comparées en texte. |
 | `drop` | fait | `percentage` compris. |
-| `grok` | pas fait | Remplacé par un step `regex` à groupes nommés dans `--filters`, ou appelé via `filters_json`. |
+| `grok` | fait | Bloc natif (#112) : bibliothèque des 70 motifs de base Logstash, `%{SYNTAXE:champ:int}` et `:float`, `(?<champ>...)`, `break_on_match`, `overwrite`, `tag_on_failure`, `patterns_dir`, `patterns_files_glob`, `pattern_definitions`, `keep_empty_captures`, `target`. Moteur `re` Python : `named_captures_only` toujours vrai, `timeout_millis` non appliqué. |
 | `kv` | fait | Bloc natif `filter { kv { ... } }` (#113) : `source`, `target` (fusion dans un hash existant), `field_split`, `value_split`, `include_keys`, `exclude_keys`, `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values` (clé répétée → liste, dédup si `false`). Réutilise `filters.KeyValueFilter` (même algorithme que le step `--filters`). |
-| `json` | pas fait | rsyslog envoie déjà du JSON (template `RSYSLOG_DebugFormat` / JSON) ; un champ texte contenant du JSON n'est pas décodé. |
+| `json` | fait | Bloc `filter{}` natif (#115) : `source`, `target` (sinon fusion à la racine), `skip_on_invalid_json`, `tag_on_failure` (défaut `_jsonparsefailure`). `@timestamp` décodé n'est pas converti en date. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |
-| `fingerprint` | oui | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
-| `useragent`, `csv`, `cidr`, `clone`, `split`, `aggregate`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
+| `fingerprint` | fait | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
+| `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` | fait | Blocs natifs (#120, `src/simples.py`), options principales et défauts du plugin officiel ; `csv` : `convert` en `integer`, `float`, `boolean` seulement ; `prune` : champs de premier niveau, sans `interpolate`. |
+| `clone`, `split` | pas fait | Produisent plusieurs événements à partir d'un seul : l'interpréteur ne traite qu'un document à la fois (#120). |
+| `useragent`, `aggregate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
 | `mmdb` (communautaire) | fait | Extension hors cœur Logstash : `database`, `source`, `target`. |
 | `filters_json` (propre au projet) | fait | Invoque un fichier `--filters` depuis un `.conf`. |
 
@@ -66,7 +68,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 
 | Option | Fait / pas fait | Commentaires |
 |---|---|---|
-| `add_field`, `remove_field`, `add_tag`, `remove_tag` | fait | Après tout filtre natif réussi (`mutate`, `dissect`, `date`, `geoip`, `translate`, `mmdb`), jamais après un échec, comme `filter_matched` (#116). |
+| `add_field`, `remove_field`, `add_tag`, `remove_tag` | fait | Après tout filtre natif réussi (`mutate`, `dissect`, `date`, `geoip`, `translate`, `mmdb`, `kv`, `grok`), jamais après un échec, comme `filter_matched` (#116). |
 | `id`, `enable_metric`, `periodic_flush` | hors périmètre | Sans effet sur le document. |
 
 ## Plugins et options `output{}`

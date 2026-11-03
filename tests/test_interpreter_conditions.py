@@ -253,7 +253,7 @@ class TestOptions:
 
     def test_plugin_filter_non_interprete_ignore(self) -> None:
         doc = {"message": "a=1"}
-        assert PipelineInterpreter("filter { grok { match => { } } }").apply(doc) == []
+        assert PipelineInterpreter('filter { ruby { code => "x" } }').apply(doc) == []
         assert doc == {"message": "a=1"}
 
     def test_coerce_literal(self) -> None:
@@ -272,13 +272,17 @@ class TestDissectCas:
             pytest.param('filter { dissect { mapping => "%{a}" } }', id="mapping-pas-un-hash"),
             pytest.param('filter { dissect { mapping => { "message" => 3 } } }', id="patron-non-textuel"),
             pytest.param('filter { dissect { mapping => { "message" => "sans champ" } } }', id="patron-invalide"),
-            pytest.param('filter { dissect { mapping => { "message" => "%{a} x %{b}" } } }', id="sans-correspondance"),
         ],
     )
     def test_ignore_sans_modifier(self, conf: str) -> None:
         doc = {"message": "a b"}
         PipelineInterpreter(conf).apply(doc)
         assert doc == {"message": "a b"}
+
+    def test_sans_correspondance_tag_echec(self) -> None:
+        doc = {"message": "a b"}
+        PipelineInterpreter('filter { dissect { mapping => { "message" => "%{a} x %{b}" } } }').apply(doc)
+        assert doc == {"message": "a b", "tags": ["_dissectfailure"]}  # #117
 
     def test_patron_compile_une_seule_fois(self) -> None:
         interp = PipelineInterpreter('filter { dissect { mapping => { "message" => "%{a} %{b}" } } }')

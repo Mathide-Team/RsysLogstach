@@ -16,11 +16,20 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- **`translate` complet** (#119), dans les `.conf` et le step `translate` de `--filters` (une seule implémentation, `filters.TranslateFilter`) : `dictionary` en ligne, dictionnaires JSON et CSV en plus du YAML, `exact`, `regex`, `override`, `iterate_on` (tableau de valeurs ou d'objets), `refresh_interval` et `refresh_behaviour` (`merge`/`replace`), anciens noms `field`/`destination`, `target` facultatif (traduction en place). Comportement de logstash-filter-translate : un `target` déjà présent n'est plus réécrit sans `override => true`, et un champ source absent ne déclenche plus le `fallback`.
+- Plugins `filter{}` simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`,
+  `uuid`, `syslog_pri`, `truncate` (module `simples.py`).
+- `dissect` natif (#117) : `convert_datatype` (`int`, `float`) et `tag_on_failure`
+  (défaut `_dissectfailure`). Un échec de découpage est désormais tagué, comme
+  Logstash, au lieu d'être ignoré en silence.
+- Filtre `json { … }` natif dans `--pipeline-conf` (#115) : `source`, `target`,
+  `skip_on_invalid_json`, `tag_on_failure`.
 - Filtre `fingerprint { … }` natif dans `--pipeline-conf` (#114) : méthodes
   SHA1/SHA256/SHA384/SHA512/MD5, HMAC, MURMUR3, UUID, IPV4_NETWORK,
   `base64encode`, `concatenate_sources`, `concatenate_all_fields`.
 - **Plugin `kv` en bloc natif** (#113) : `filter { kv { ... } }` réutilise `filters.KeyValueFilter` — `source` (défaut `message`), `target` (fusion dans un hash existant, comme Logstash), `field_split`, `value_split`, `include_keys`, `exclude_keys`, `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values`. Une clé répétée dans la source vaut la liste de ses valeurs (comportement du plugin officiel) ; `allow_duplicate_values => false` déduplique en gardant l'ordre. Le step `kv` de `--filters` gagne les mêmes options. Ligne `kv` de l'audit #101 mise à jour.
-- **Options communes sur tous les filtres** (#116) : `add_field`, `add_tag`, `remove_field`, `remove_tag` s'appliquent après tout filtre natif réussi (`dissect`, `date`, `geoip`, `translate`, `mmdb`), plus seulement après `mutate`, comme `filter_matched` de Logstash ; jamais après un échec. Fonction partagée `filters.apply_common_options`.
+- **Options communes sur tous les filtres** (#116) : `add_field`, `add_tag`, `remove_field`, `remove_tag` s'appliquent après tout filtre natif réussi (`dissect`, `date`, `geoip`, `translate`, `mmdb`, `kv`, `grok`), plus seulement après `mutate`, comme `filter_matched` de Logstash ; jamais après un échec. Fonction partagée `filters.apply_common_options`.
+- **`grok {}` natif** dans un pipeline `.conf` (#112) : module `grok.py`, bibliothèque des 70 motifs de base de logstash-patterns-core (Apache-2.0, attribution dans `LICENSES/`), `%{SYNTAXE:champ:int|float}`, groupes nommés `(?<champ>...)`, options `break_on_match`, `overwrite`, `tag_on_failure`, `patterns_dir`, `patterns_files_glob`, `pattern_definitions`, `keep_empty_captures`, `target`. Motifs compilés une fois par jeu d'options.
 - **Audit des fonctions Logstash** (#101) : `docs/audit-fonctions-logstash.md`, tableau fonction / fait ou pas fait / commentaires (gabarits sprintf, conditions, plugins `filter{}` et `output{}`, options communes).
 - **Authentification par certificat client (mTLS)** (#100) : `--cacert`, `--tls-certificate`, `--tls-key`, mêmes noms que le plugin logstash-output-opensearch, transmis au client opensearch-py. Refus au démarrage si certificat et clé ne vont pas ensemble, si les nœuds sont en `http://` ou si un fichier manque. Test de bout en bout contre un serveur HTTPS local qui exige un certificat client.
 - **Métriques Prometheus** (#35) : module `metrics.py` (prometheus-client 0.26.0, registre propre au pont), endpoint `/metrics` activé par `--metrics-port` (désactivé par défaut, écoute sur 127.0.0.1). Compteurs reçus/issues/erreurs, histogrammes de latence d'indexation et de taille, jauges de taille de DLQ et de renvois en attente.
