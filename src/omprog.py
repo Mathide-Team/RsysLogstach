@@ -27,6 +27,10 @@ commande (visible par `ps aux`). Authentification par certificat (mTLS,
 issue #100) : `--tls-certificate` / `--tls-key`, avec `--cacert` pour
 l'autorité du cluster, mêmes noms que le plugin logstash-output-opensearch ;
 ces fichiers sont des chemins, pas des secrets en clair.
+
+Ces options peuvent aussi venir du bloc `opensearch{}` du `.conf` (#125,
+`opensearchconf`) : la ligne de commande et l'environnement restent
+prioritaires.
 """
 
 from __future__ import annotations
@@ -53,6 +57,7 @@ from i18n import _
 from indexer import OpenSearchIndexer, SendOutcome
 from interpreter import PipelineInterpreter
 from metrics import Metrics
+from opensearchconf import apply_connection_options, collect_connection_options, conf_auth
 from tracing import traced
 from util import load_json_file, opensearch_auth_from_env
 
@@ -392,11 +397,13 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
     if args.document_id_fingerprint is not None:
         raw = args.document_id_fingerprint.strip()
         fingerprint_fields = [] if raw in ("", "*") else [f.strip() for f in raw.split(",") if f.strip()]
+    conf_options = collect_connection_options(interpreter.output_plugins) if interpreter else {}
+    args = apply_connection_options(args, conf_options)
     hosts, use_ssl = parse_hosts(args.opensearch_host)
     check_tls_options(args, use_ssl)
     indexer = indexer_factory(
         hosts=hosts,
-        auth=opensearch_auth_from_env(),
+        auth=opensearch_auth_from_env() or conf_auth(conf_options),
         index_pattern=args.index_pattern,
         use_ssl=use_ssl,
         verify_certs=not args.no_verify_certs,

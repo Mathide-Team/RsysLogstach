@@ -78,8 +78,8 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | Fonction | Fait / pas fait | Commentaires |
 |---|---|---|
 | `opensearch { … }` / `elasticsearch { … }` | partiel | Seules `index` et `document_id` (gabarits sprintf) sont lues par document. |
-| `hosts`, `user`, `password`, `ssl`, `ssl_certificate_verification` | pas fait dans le `.conf` | Fournis par `--opensearch-host`, `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` et `--no-verify-certs`. |
-| `cacert`, `tls_certificate`, `tls_key` (mTLS) | fait (ligne de commande) | Mêmes noms que le plugin logstash-output-opensearch : `--cacert`, `--tls-certificate`, `--tls-key` (#100). Lus sur la ligne de commande, pas dans le `.conf`, comme `hosts`. |
+| `hosts`, `user`, `password`, `ssl`, `ssl_certificate_verification` | fait (#125) | Lus dans le `.conf` (branches comprises) ; `--opensearch-host`, `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` et `--no-verify-certs` restent prioritaires. Une seule connexion : valeurs différentes d'un bloc à l'autre refusées. |
+| `cacert`, `tls_certificate`, `tls_key` (mTLS) | fait | Mêmes noms que le plugin logstash-output-opensearch : `--cacert`, `--tls-certificate`, `--tls-key` (#100), ou dans le `.conf` (#125) ; la ligne de commande est prioritaire. |
 | `keystore`, `truststore` (JKS / PKCS#12) | pas fait | Format Java ; utiliser des fichiers PEM. |
 | `action`, `pipeline`, `routing`, `ilm_*`, `template*` | pas fait | `action` vaut toujours `index` ; le template d'index passe par `--index-template`. |
 | `stdout`, `file`, `http`, autres sorties | pas fait | Ignorées (trace de débogage). |
