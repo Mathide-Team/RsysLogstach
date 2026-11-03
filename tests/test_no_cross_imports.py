@@ -4,14 +4,14 @@
 Vérification mécanique via `ast` (pas une simple relecture des docstrings) —
 règle documentée dans PATTERNS.md, « Absence de dépendances circulaires
 entre modules » : le graphe des imports internes ne doit contenir aucun
-cycle. Vérifie en plus les invariants cités par les docstrings :
+cycle.
 
-- `tracing` est une feuille (aucun import interne) et `util` n'importe
-  que `tracing` (docstring de util.py : « ... ce code n'a aucune dépendance
-  directe vers un autre module de ce projet (hormis `from tracing import
-  traced` ...) ») ;
-- `filters` ne dépend jamais d'`indexer` (docstring de filters.py) ;
-- `enrichment` ne dépend que de `tracing` (docstring du module).
+Depuis le découpage #111, `src/` ne contient plus que le connecteur
+(omprog, indexer, dlq, metrics, opensearchconf) : les invariants de la
+bibliothèque (tracing feuille, util/enrichment/i18n…) sont vérifiés dans
+PyStashTemplate. Ici, on vérifie en plus que le connecteur ne dépend
+que de lui-même et du paquet `pystashtemplate` — et qu'aucun module de
+la bibliothèque n'a été recopié dans ce dépôt.
 """
 
 from __future__ import annotations
@@ -21,6 +21,23 @@ from pathlib import Path
 
 SRC = Path(__file__).resolve().parents[1] / "src"
 MODULES = sorted(p.stem for p in SRC.glob("*.py") if p.stem != "__init__")
+MODULES_BIBLIOTHEQUE = {
+    "templates",
+    "util",
+    "tracing",
+    "enrichment",
+    "dnslookup",
+    "fingerprint",
+    "grok",
+    "multievents",
+    "useragent",
+    "xmlfilter",
+    "simples",
+    "filters",
+    "interpreter",
+}
+# Exception #111 : chaque dépôt garde SON module i18n (domaine gettext propre) ;
+# celui de RsysLogstach traduit les chaînes du connecteur.
 
 
 def _imports_of(module_name: str) -> set[str]:
@@ -31,9 +48,9 @@ def _imports_of(module_name: str) -> set[str]:
         if isinstance(node, ast.Import):
             internal.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
-            # `from templates import ...` → templates ; les imports relatifs
-            # n'existent pas dans ce projet (conftest ajoute src/ au path).
-            internal.add(node.module.split(".")[0])
+            # `from dlq import ...` → dlq ; `from pystashtemplate.X import ...`
+            # → pystashtemplate.X (hors périmètre de ce graphe).
+            internal.add(node.module)
     return internal & set(MODULES)
 
 
@@ -58,25 +75,29 @@ def test_graphe_sans_cycle() -> None:
                     stack.append((dep, path | {current}))
 
 
-def test_tracing_est_une_feuille_et_util_ne_depend_que_de_tracing() -> None:
-    # tracing.py : aucun module interne importé ; util.py : tracing uniquement.
-    assert _imports_of("tracing") == set(), (
-        f"tracing ne devrait importer aucun module interne (trouvé: {_imports_of('tracing')})"
-    )
-    assert _imports_of("util") <= {"tracing"}, f"util ne devrait importer que tracing (trouvé: {_imports_of('util')})"
+def test_src_ne_contient_que_le_connecteur() -> None:
+    # Découpage #111 : les modules de la bibliothèque vivent dans PyStashTemplate ;
+    # aucun ne doit revenir (ni exister encore) dans src/.
+    restants = set(MODULES) & MODULES_BIBLIOTHEQUE
+    assert restants == set(), f"modules bibliothèque encore présents dans src/ : {restants}"
+    for attendu in ("omprog.py", "indexer.py", "dlq.py", "metrics.py", "opensearchconf.py"):
+        assert (SRC / attendu).is_file(), f"{attendu} manque dans src/"
 
 
-def test_filters_ne_depend_pas_d_indexer() -> None:
-    # Docstring de filters.py : « jamais de `indexer` ».
-    assert "indexer" not in _imports_of("filters")
-
-
-def test_enrichment_ne_depend_que_de_tracing() -> None:
-    # Docstring d'enrichment.py : « Ne dépend que de `tracing` ».
-    assert _imports_of("enrichment") <= {"tracing"}
-
-
-def test_i18n_ne_depend_que_de_tracing() -> None:
-    # Docstring d'i18n.py (issue #38) : importé par filters, indexer et omprog,
-    # il ne doit dépendre d'aucun d'eux.
-    assert _imports_of("i18n") <= {"tracing"}
+def test_bibliotheque_importee_via_le_paquet() -> None:
+    # Le connecteur consomme la sémantique Logstash uniquement via
+    # `pystashtemplate.X`, jamais par un import à plat (qui ne marcherait
+    # plus : les modules ne sont plus dans src/).
+    for m in MODULES:
+        arbre = ast.parse((SRC / f"{m}.py").read_text(encoding="utf-8"))
+        for node in ast.walk(arbre):
+            noms: list[str] = []
+            if isinstance(node, ast.Import):
+                noms = [a.name for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                noms = [node.module]
+            for nom in noms:
+                # `filters`, `from templates import...` → interdit ; seul
+                # `pystashtemplate.filters` (paquet) est valide.
+                if nom.split(".")[-1] in MODULES_BIBLIOTHEQUE or nom in MODULES_BIBLIOTHEQUE:
+                    assert nom.startswith("pystashtemplate."), f"{m} : import plat interdit ({nom})"

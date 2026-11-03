@@ -259,7 +259,7 @@ class TestFingerprintIdempotence:
         asyncio.run(bridge.handle_line(json.dumps(doc)))
         asyncio.run(bridge.close())
         # L'_id est l'empreinte sha256 du champ, pas le gabarit « sw01 ».
-        from fingerprint import compute_fingerprint
+        from pystashtemplate.fingerprint import compute_fingerprint
 
         expected = compute_fingerprint(doc, ["hostname"], "sha256")
         assert fake.calls[0][2] == expected
@@ -309,7 +309,7 @@ class TestFingerprintIdempotence:
         asyncio.run(bridge.close())
         sans_cle = fake.calls[0][2]
 
-        from fingerprint import compute_fingerprint
+        from pystashtemplate.fingerprint import compute_fingerprint
 
         assert with_option == compute_fingerprint(doc, ["hostname"], "sha256", key="cle-option")
         assert with_env == compute_fingerprint(doc, ["hostname"], "sha256", key="cle-env")

@@ -20,24 +20,24 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 
 | Module | Rôle | Dépendances |
 |--------|------|-------------|
-| `omprog.py` | Point d'entrée asyncio (rsyslog omprog) | tous les modules métier |
-| `tracing.py` | Décorateur `@traced` (loguru) | — |
-| `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | tracing |
-| `util.py` | `add_failure_tags`, `load_json_file`, `opensearch_auth_from_env` | tracing |
-| `templates.py` | `render_template()` — syntaxe `%{field}` / `%{[a][b]}` | tracing |
-| `fingerprint.py` | `compute_fingerprint()` et filtre `FingerprintFilter` (#114) | templates, tracing |
-| `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | tracing |
-| `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
-| `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
-| `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | dnslookup, enrichment, filters, fingerprint, grok, i18n, multievents, simples, templates, tracing, useragent, util, xmlfilter |
-| `useragent.py` | `UserAgentFilter` — plugin `useragent` natif, ua-parser (#121) | templates, tracing |
-| `xmlfilter.py` | `XmlFilter` — plugin `xml` natif, lxml (#121) | templates, tracing, util |
-| `multievents.py` | `CloneFilter`, `SplitFilter` — plusieurs événements par message (#141) | templates, tracing |
-| `dnslookup.py` | `DnsFilter` — plugin `dns` natif, dnspython (#121) | templates, tracing, util |
-| `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
-| `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
-| `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
+| `omprog.py` | Point d'entrée asyncio (rsyslog omprog) | tous les modules du connecteur + `pystashtemplate` |
+| `i18n.py` | Domaine gettext `rsyslogstach` (chaînes du connecteur) | `pystashtemplate.tracing` |
+| `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | `pystashtemplate.tracing` |
+| `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | `pystashtemplate.tracing` |
+| `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | i18n, `pystashtemplate.tracing` |
+| `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, i18n, `pystashtemplate.fingerprint`, `pystashtemplate.templates` |
+
+Depuis le découpage #111, la sémantique Logstash partagée vit dans le
+dépôt [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)
+(dépendance figée `v0.1.0`) : `templates` (gabarits `%{field}`), `filters`
+(dissect, drop, regex, kv, mutate, geoip, translate, date), `interpreter`
+(`PipelineInterpreter`, `--pipeline-conf` Logstash), `enrichment`
+(dictionnaire + GeoIP), `grok`, `fingerprint`, `useragent`, `xmlfilter`,
+`multievents`, `dnslookup`, `simples`, `util`, `tracing` — chacun gardant
+son rôle et ses dépendances croissantes documentés dans ce README jusqu'à
+#111. RsysLogstach, lui, reste le connecteur rsyslog : omprog + livraison
+(indexer, dlq) + exploitation (metrics), comme tout autre outil (…beat)
+pourrait s'appuyer sur PyStashTemplate.
 
 Le graphe de dépendances est acyclique, vérifié mécaniquement par `tests/test_no_cross_imports.py` (analyse `ast`).
 

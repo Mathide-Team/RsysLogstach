@@ -1453,6 +1453,23 @@ wheels = [
 ]
 
 [[package]]
+name = "pystashtemplate"
+version = "0.1.0"
+source = { git = "https://github.com/Mathilde-Team/PyStashTemplate.git?rev=v0.1.0#e90cf64a3896d910a620d58690afdc45b80b91b1" }
+dependencies = [
+    { name = "dnspython" },
+    { name = "geoip2" },
+    { name = "logstash-pipeline-parser" },
+    { name = "loguru" },
+    { name = "lxml" },
+    { name = "maxminddb" },
+    { name = "mmh3" },
+    { name = "pyyaml" },
+    { name = "ua-parser" },
+    { name = "ua-parser-builtins" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1569,18 +1586,10 @@ name = "rsyslogstach"
 version = "0.9.0"
 source = { editable = "." }
 dependencies = [
-    { name = "dnspython" },
-    { name = "geoip2" },
-    { name = "logstash-pipeline-parser" },
     { name = "loguru" },
-    { name = "lxml" },
-    { name = "maxminddb" },
-    { name = "mmh3" },
     { name = "opensearch-py", extra = ["async"] },
     { name = "prometheus-client" },
-    { name = "pyyaml" },
-    { name = "ua-parser" },
-    { name = "ua-parser-builtins" },
+    { name = "pystashtemplate" },
 ]
 
 [package.optional-dependencies]
@@ -1593,22 +1602,14 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dnspython", specifier = "==2.9.1" },
-    { name = "geoip2" },
-    { name = "logstash-pipeline-parser", specifier = "==0.0.3" },
     { name = "loguru", specifier = ">=0.7" },
-    { name = "lxml", specifier = "==6.1.3" },
-    { name = "maxminddb" },
     { name = "mmdb-writer", marker = "extra == 'dev'", specifier = ">=0.2.7" },
-    { name = "mmh3" },
     { name = "opensearch-py", extras = ["async"] },
     { name = "prometheus-client", specifier = "==0.26.0" },
+    { name = "pystashtemplate", git = "https://github.com/Mathilde-Team/PyStashTemplate.git?rev=v0.1.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1.0" },
-    { name = "pyyaml" },
     { name = "ruff", marker = "extra == 'dev'" },
-    { name = "ua-parser", specifier = "==1.0.2" },
-    { name = "ua-parser-builtins", specifier = "==202610" },
 ]
 provides-extras = ["dev"]
 

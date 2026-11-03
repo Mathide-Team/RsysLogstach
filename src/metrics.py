@@ -33,9 +33,9 @@ from typing import Any
 
 from loguru import logger
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, generate_latest, start_http_server
+from pystashtemplate.tracing import traced
 
 from i18n import _
-from tracing import traced
 
 OUTCOMES = ("indexed", "dropped", "dead_lettered", "retryable")
 ERROR_CAUSES = ("invalid_json", "not_an_object", "exception")
