@@ -272,6 +272,7 @@ from simples import PLUGINS as PLUGINS_SIMPLES
 from simples import appliquer_cidr, reseaux_cidr
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
+from useragent import UserAgentFilter
 from util import add_failure_tags, load_json_file
 
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
@@ -399,6 +400,8 @@ class PipelineInterpreter:
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
         # #119 : un TranslateFilter par jeu d'options (None : bloc ignoré).
         self._translate_filters: dict[str, TranslateFilter | None] = {}
+        # #121 : un UserAgentFilter par jeu d'options (None : bloc ignoré).
+        self._useragent_filters: dict[str, UserAgentFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -556,6 +559,8 @@ class PipelineInterpreter:
             reussi = self._apply_grok(doc, options)
         elif name == "json":
             reussi = self._apply_json(doc, options)
+        elif name == "useragent":
+            reussi = self._apply_useragent(doc, options)
         elif name in PLUGINS_SIMPLES:
             reussi = PLUGINS_SIMPLES[name](doc, options)
         elif name == "cidr":
@@ -628,6 +633,30 @@ class PipelineInterpreter:
         if filtre is None:
             filtre = GrokFilter(options)
             self._grok_cache[cle] = filtre
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_useragent(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { useragent { source => ... } }` — délègue à `useragent.UserAgentFilter` (#121).
+
+        Construit une fois par jeu d'options (clé JSON triée). Options
+        invalides ou fichier `regexes` illisible : bloc ignoré, tracé,
+        sans nouvel essai.
+
+        Returns:
+            True si le User-Agent a été analysé (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._useragent_filters:
+            try:
+                filtre: UserAgentFilter | None = UserAgentFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin useragent ignoré : {}", exc)
+                filtre = None
+            self._useragent_filters[cle] = filtre
+        filtre = self._useragent_filters[cle]
+        if filtre is None:
+            return False
         return filtre.apply(doc)
 
     @traced

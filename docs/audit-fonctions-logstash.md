@@ -60,7 +60,8 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `fingerprint` | fait | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
 | `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` | fait | Blocs natifs (#120, `src/simples.py`), options principales et défauts du plugin officiel ; `csv` : `convert` en `integer`, `float`, `boolean` seulement ; `prune` : champs de premier niveau, sans `interpolate`. |
 | `clone`, `split` | pas fait | Produisent plusieurs événements à partir d'un seul : l'interpréteur ne traite qu'un document à la fois (#120). |
-| `useragent`, `aggregate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
+| `useragent` | fait (#121) | `src/useragent.py`, ua-parser : champs ECS et anciens champs (`ecs_compatibility => disabled`), `prefix`, `regexes`, `lru_cache_size`. |
+| `aggregate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
 | `mmdb` (communautaire) | fait | Extension hors cœur Logstash : `database`, `source`, `target`. |
 | `filters_json` (propre au projet) | fait | Invoque un fichier `--filters` depuis un `.conf`. |
 
