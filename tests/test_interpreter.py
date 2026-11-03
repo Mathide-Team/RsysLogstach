@@ -119,6 +119,35 @@ class TestFilterKV:
             "user": "admin",
         }
 
+    def test_options_communes_apres_succes(self) -> None:
+        # #116 : add_tag appliqué après un kv réussi (filter_matched).
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                add_tag => ["decoupe"]
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "a=1", "tags": ["existant"]}
+        interp.apply(doc)
+        assert doc == {"message": "a=1", "a": "1", "tags": ["existant", "decoupe"]}
+
+    def test_options_communes_ignorees_si_aucune_paire(self) -> None:
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                add_tag => ["decoupe"]
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "sans separateur"}
+        interp.apply(doc)
+        assert doc == {"message": "sans separateur"}
+
     def test_target_fusionne_dans_hash_existant(self) -> None:
         conf = """
         filter {

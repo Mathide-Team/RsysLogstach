@@ -66,7 +66,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 
 | Option | Fait / pas fait | Commentaires |
 |---|---|---|
-| `add_field`, `remove_field`, `add_tag`, `remove_tag` | partiel | Interprétées dans `mutate` uniquement ; ignorées sur `dissect`, `date`, `geoip`, `translate`… |
+| `add_field`, `remove_field`, `add_tag`, `remove_tag` | fait | Après tout filtre natif réussi (`mutate`, `dissect`, `date`, `geoip`, `translate`, `mmdb`), jamais après un échec, comme `filter_matched` (#116). |
 | `id`, `enable_metric`, `periodic_flush` | hors périmètre | Sans effet sur le document. |
 
 ## Plugins et options `output{}`
