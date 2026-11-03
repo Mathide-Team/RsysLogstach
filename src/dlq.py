@@ -31,7 +31,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from loguru import logger
-
 from pystashtemplate.tracing import traced
 
 _SIZE_UNITS = {"": 1, "b": 1, "k": 1024, "kb": 1024, "m": 1024**2, "mb": 1024**2, "g": 1024**3, "gb": 1024**3}

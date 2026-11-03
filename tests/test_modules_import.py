@@ -17,8 +17,13 @@ def test_import(module):
 
 @pytest.mark.parametrize(
     "module",
-    ["pystashtemplate.dnslookup", "pystashtemplate.enrichment", "pystashtemplate.filters",
-     "pystashtemplate.interpreter", "pystashtemplate.templates"],
+    [
+        "pystashtemplate.dnslookup",
+        "pystashtemplate.enrichment",
+        "pystashtemplate.filters",
+        "pystashtemplate.interpreter",
+        "pystashtemplate.templates",
+    ],
 )
 def test_import_bibliotheque(module):
     # Découpage #111 : la sémantique Logstash vient du paquet PyStashTemplate.

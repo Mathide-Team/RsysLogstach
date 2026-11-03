@@ -25,12 +25,12 @@ from typing import Any
 from loguru import logger
 from opensearchpy import AsyncOpenSearch
 from opensearchpy.exceptions import NotFoundError, OpenSearchException, RequestError
-
-from dlq import LocalDeadLetterQueue
 from pystashtemplate.fingerprint import compute_fingerprint
-from pystashtemplate.i18n import _
 from pystashtemplate.templates import CompiledTemplate, compile_template, render
 from pystashtemplate.tracing import traced
+
+from dlq import LocalDeadLetterQueue
+from i18n import _
 
 OPENSEARCH_TIMEOUT = 3.0  # secondes, timeout socket du client OpenSearch
 

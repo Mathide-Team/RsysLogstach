@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:53+0000\n"
+"POT-Creation-Date: 2026-11-03 16:32+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -16,23 +16,6 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
-
-#: src/filters.py
-msgid "base geoip illisible : {} ({})"
-msgstr "unreadable geoip database: {} ({})"
-
-#: src/filters.py
-#, python-brace-format
-msgid "date : fuseau {name} devenu inconnu, UTC retenu erreur={error}"
-msgstr "date: timezone {name} no longer known, falling back to UTC error={error}"
-
-#: src/filters.py
-msgid "dictionnaire translate illisible : {} ({})"
-msgstr "unreadable translate dictionary: {} ({})"
-
-#: src/filters.py
-msgid "exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"
-msgstr "exception while applying the mutate filter, remaining operations skipped: {}"
 
 #: src/indexer.py
 #, python-brace-format
@@ -43,35 +26,6 @@ msgstr "OpenSearch indexing failed permanently error={error}"
 #, python-brace-format
 msgid "Indexation OpenSearch échouée erreur={error}"
 msgstr "OpenSearch indexing failed error={error}"
-
-#
-#: src/interpreter.py
-msgid "dissect : conversion impossible de {} en {}"
-msgstr "dissect: cannot convert {} to {}"
-
-#: src/interpreter.py
-msgid "dissect : type {} inconnu pour convert_datatype"
-msgstr "dissect: unknown type {} for convert_datatype"
-
-#: src/interpreter.py
-msgid "dissect : échec sur le champ {}"
-msgstr "dissect: failure on field {}"
-
-#: src/interpreter.py
-msgid "fingerprint ignoré : {}"
-msgstr "fingerprint ignored: {}"
-
-#: src/interpreter.py
-msgid "json : analyse impossible du champ {} : {}"
-msgstr "json: cannot parse field {}: {}"
-
-#: src/interpreter.py
-msgid "json : un JSON non objet exige l'option target"
-msgstr "json: a non-object JSON requires the target option"
-
-#: src/interpreter.py
-msgid "json ignoré : option source manquante"
-msgstr "json ignored: missing source option"
 
 #: src/metrics.py
 #, python-brace-format
@@ -293,48 +247,74 @@ msgstr "Maximum age of a rotated file"
 msgid "Échec inattendu du traitement d'un message erreur={error}"
 msgstr "Unexpected failure while processing a message error={error}"
 
-#
-#
-#: src/simples.py
-msgid "cidr : lecture impossible de {} : {}"
-msgstr "cidr: cannot read {}: {}"
-
-#
-#: src/simples.py
-msgid "cidr : réseau invalide ignoré : {}"
-msgstr "cidr: invalid network ignored: {}"
-
-#
-#: src/simples.py
-msgid "csv : analyse impossible du champ {} : {}"
-msgstr "csv: cannot parse field {}: {}"
+#~ msgid "base geoip illisible : {} ({})"
+#~ msgstr "unreadable geoip database: {} ({})"
 
 #
 #
-#: src/simples.py
-msgid "csv : conversion impossible de {} en {}"
-msgstr "csv: cannot convert {} to {}"
+#~ msgid "cidr : lecture impossible de {} : {}"
+#~ msgstr "cidr: cannot read {}: {}"
 
 #
-#: src/simples.py
-msgid "csv : type {} inconnu pour convert"
-msgstr "csv: unknown type {} for convert"
+#~ msgid "cidr : réseau invalide ignoré : {}"
+#~ msgstr "cidr: invalid network ignored: {}"
 
-#: src/simples.py
-msgid "syslog_pri : valeur invalide {}"
-msgstr "syslog_pri: invalid value {}"
-
-#: src/simples.py
-msgid "truncate ignoré : length_bytes doit être un entier positif"
-msgstr "truncate ignored: length_bytes must be a positive integer"
+#
+#~ msgid "csv : analyse impossible du champ {} : {}"
+#~ msgstr "csv: cannot parse field {}: {}"
 
 #
 #
-#: src/simples.py
-msgid "urldecode : décodage impossible : {}"
-msgstr "urldecode: cannot decode: {}"
+#~ msgid "csv : conversion impossible de {} en {}"
+#~ msgstr "csv: cannot convert {} to {}"
 
 #
-#: src/simples.py
-msgid "uuid ignoré : option target manquante"
-msgstr "uuid ignored: missing target option"
+#~ msgid "csv : type {} inconnu pour convert"
+#~ msgstr "csv: unknown type {} for convert"
+
+#, python-brace-format
+#~ msgid "date : fuseau {name} devenu inconnu, UTC retenu erreur={error}"
+#~ msgstr "date: timezone {name} no longer known, falling back to UTC error={error}"
+
+#~ msgid "dictionnaire translate illisible : {} ({})"
+#~ msgstr "unreadable translate dictionary: {} ({})"
+
+#
+#~ msgid "dissect : conversion impossible de {} en {}"
+#~ msgstr "dissect: cannot convert {} to {}"
+
+#~ msgid "dissect : type {} inconnu pour convert_datatype"
+#~ msgstr "dissect: unknown type {} for convert_datatype"
+
+#~ msgid "dissect : échec sur le champ {}"
+#~ msgstr "dissect: failure on field {}"
+
+#~ msgid "exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"
+#~ msgstr "exception while applying the mutate filter, remaining operations skipped: {}"
+
+#~ msgid "fingerprint ignoré : {}"
+#~ msgstr "fingerprint ignored: {}"
+
+#~ msgid "json : analyse impossible du champ {} : {}"
+#~ msgstr "json: cannot parse field {}: {}"
+
+#~ msgid "json : un JSON non objet exige l'option target"
+#~ msgstr "json: a non-object JSON requires the target option"
+
+#~ msgid "json ignoré : option source manquante"
+#~ msgstr "json ignored: missing source option"
+
+#~ msgid "syslog_pri : valeur invalide {}"
+#~ msgstr "syslog_pri: invalid value {}"
+
+#~ msgid "truncate ignoré : length_bytes doit être un entier positif"
+#~ msgstr "truncate ignored: length_bytes must be a positive integer"
+
+#
+#
+#~ msgid "urldecode : décodage impossible : {}"
+#~ msgstr "urldecode: cannot decode: {}"
+
+#
+#~ msgid "uuid ignoré : option target manquante"
+#~ msgstr "uuid ignored: missing target option"

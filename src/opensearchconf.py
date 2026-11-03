@@ -29,7 +29,6 @@ import argparse
 from typing import Any
 
 from loguru import logger
-
 from pystashtemplate.tracing import traced
 
 INDEX_PLUGINS = frozenset({"opensearch", "elasticsearch"})

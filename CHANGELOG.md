@@ -4,6 +4,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+### Ajouté
+- **Découpage #111 : RsysLogstach devient le connecteur rsyslog, la sémantique
+  Logstash part dans [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)** (v0.1.0).
+  `src/` ne garde que le connecteur : `omprog`, `indexer`, `dlq`, `metrics`,
+  `opensearchconf` (+ son `i18n` de domaine `rsyslogstach`) ; les modules
+  `templates`, `filters`, `interpreter`, `enrichment`, `grok`, `fingerprint`,
+  `useragent`, `xmlfilter`, `multievents`, `dnslookup`, `simples`, `util`,
+  `tracing` et leurs tests vivent désormais dans le paquet
+  `pystashtemplate` (dépendance git figée sur le tag `v0.1.0`), comme tout
+  autre outil (…beat) pourrait le faire. Variables d'environnement :
+  `PYSTASHTEMPLATE_LOCALEDIR`/`PYSTASHTEMPLATE_DNS` (anciens noms
+  `RSYSLOGSTACH_*` lus en repli). Suivi détaillé sur l'issue #111.
+
 - CI et publication : repli GitHub autorisé, publication manuelle sur un tag
   déjà livré dans main, vérification d’ascendance et archives du tag exact.
 

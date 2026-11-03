@@ -6,9 +6,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pystashtemplate.interpreter import PipelineInterpreter
 
 import omprog
-from pystashtemplate.interpreter import PipelineInterpreter
 from opensearchconf import apply_connection_options, collect_connection_options, conf_auth, conf_host_urls
 
 

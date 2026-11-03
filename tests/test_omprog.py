@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 
 import pytest
+from pystashtemplate.interpreter import PipelineInterpreter
 
 import omprog
 from indexer import SendOutcome
-from pystashtemplate.interpreter import PipelineInterpreter
 
 ROOT = Path(__file__).resolve().parents[1]
 

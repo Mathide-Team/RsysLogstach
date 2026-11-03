@@ -22,9 +22,22 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[1] / "src"
 MODULES = sorted(p.stem for p in SRC.glob("*.py") if p.stem != "__init__")
 MODULES_BIBLIOTHEQUE = {
-    "templates", "util", "tracing", "i18n", "enrichment", "dnslookup", "fingerprint",
-    "grok", "multievents", "useragent", "xmlfilter", "simples", "filters", "interpreter",
+    "templates",
+    "util",
+    "tracing",
+    "enrichment",
+    "dnslookup",
+    "fingerprint",
+    "grok",
+    "multievents",
+    "useragent",
+    "xmlfilter",
+    "simples",
+    "filters",
+    "interpreter",
 }
+# Exception #111 : chaque dépôt garde SON module i18n (domaine gettext propre) ;
+# celui de RsysLogstach traduit les chaînes du connecteur.
 
 
 def _imports_of(module_name: str) -> set[str]:
