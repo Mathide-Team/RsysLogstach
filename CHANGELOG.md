@@ -9,12 +9,18 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 
 ### Corrigé
+- **Chaînes des `.conf`** (#128) : les antislashs entre guillemets sont conservés, comme Logstash (`config.support_escapes: false`) — `"a\.b"` vaut `a\.b` et `"\d+"` vaut `\d+`, au lieu d'être retirés par `logstash-pipeline-parser`. Les regex de `gsub` et des conditions `=~ "..."` redeviennent fidèles ; prérequis des motifs `grok` (#112).
 - **Gabarits** (#102) : `%{+%s}` rend les secondes depuis l'epoch de `@timestamp`, comme Logstash, au lieu de `%0`.
 
 ### Modifié
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Filtre `fingerprint { … }` natif dans `--pipeline-conf` (#114) : méthodes
+  SHA1/SHA256/SHA384/SHA512/MD5, HMAC, MURMUR3, UUID, IPV4_NETWORK,
+  `base64encode`, `concatenate_sources`, `concatenate_all_fields`.
+- **Plugin `kv` en bloc natif** (#113) : `filter { kv { ... } }` réutilise `filters.KeyValueFilter` — `source` (défaut `message`), `target` (fusion dans un hash existant, comme Logstash), `field_split`, `value_split`, `include_keys`, `exclude_keys`, `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values`. Une clé répétée dans la source vaut la liste de ses valeurs (comportement du plugin officiel) ; `allow_duplicate_values => false` déduplique en gardant l'ordre. Le step `kv` de `--filters` gagne les mêmes options. Ligne `kv` de l'audit #101 mise à jour.
+- **Options communes sur tous les filtres** (#116) : `add_field`, `add_tag`, `remove_field`, `remove_tag` s'appliquent après tout filtre natif réussi (`dissect`, `date`, `geoip`, `translate`, `mmdb`), plus seulement après `mutate`, comme `filter_matched` de Logstash ; jamais après un échec. Fonction partagée `filters.apply_common_options`.
 - **Audit des fonctions Logstash** (#101) : `docs/audit-fonctions-logstash.md`, tableau fonction / fait ou pas fait / commentaires (gabarits sprintf, conditions, plugins `filter{}` et `output{}`, options communes).
 - **Authentification par certificat client (mTLS)** (#100) : `--cacert`, `--tls-certificate`, `--tls-key`, mêmes noms que le plugin logstash-output-opensearch, transmis au client opensearch-py. Refus au démarrage si certificat et clé ne vont pas ensemble, si les nœuds sont en `http://` ou si un fichier manque. Test de bout en bout contre un serveur HTTPS local qui exige un certificat client.
 - **Métriques Prometheus** (#35) : module `metrics.py` (prometheus-client 0.26.0, registre propre au pont), endpoint `/metrics` activé par `--metrics-port` (désactivé par défaut, écoute sur 127.0.0.1). Compteurs reçus/issues/erreurs, histogrammes de latence d'indexation et de taille, jauges de taille de DLQ et de renvois en attente.

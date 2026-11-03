@@ -40,6 +40,10 @@ seulement lue) :
       une simplification par rapport au comportement réel) ;
     - `filter { dissect { mapping => {...} } }` — réutilise
       `filters.Dissector` (même algorithme, pas de duplication) ;
+    - `filter { kv { ... } }` — réutilise `filters.KeyValueFilter`
+      (plugin `kv` natif, issue #113) : `source`, `target`,
+      `field_split`, `value_split`, `include_keys`, `exclude_keys`,
+      `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values` ;
     - `filter { mutate { ... } }` — `convert`/`remove_field` (la demande
       initiale) plus `rename`/`gsub`/`strip`/`add_field`/`add_tag`/
       `remove_tag` (item "Proposé" #1 de FEATURES.md, à portée de main une
@@ -249,10 +253,13 @@ from typing import Any
 import maxminddb
 import yaml
 from logstash_pipeline_parser import Pipeline
+from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
-from filters import DateFilter, Dissector, FilterPipeline, apply_mutate
+from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
+from fingerprint import FingerprintFilter
+from i18n import _
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -260,6 +267,46 @@ from util import add_failure_tags, load_json_file
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
 _REGEX_OPS = {"=~", "!~"}
 _BOOL_OPS = {"and", "or", "xor", "nand"}
+
+
+@traced
+def _chaine_brute(source: str, position: int, tokens: Any) -> str:
+    """Action d'analyse : texte d'une chaîne entre guillemets, guillemets retirés, antislashs gardés.
+
+    Signature complète `(source, position, jetons)` de pyparsing : le
+    décorateur `traced` masque l'arité réelle, pyparsing doit donc recevoir
+    la forme à trois arguments sans avoir à la deviner.
+    """
+    texte = tokens[0][1:-1]
+    logger.debug("_chaine_brute() | {} caractère(s)", len(texte))
+    return texte
+
+
+@traced
+def _conserver_antislashs() -> None:
+    r"""Chaînes `.conf` lues brutes, comme Logstash (`config.support_escapes: false`), issue #128.
+
+    `logstash-pipeline-parser==0.0.3` déclare les chaînes avec
+    `pp.QuotedString(..., esc_char="\\")` : pyparsing retire alors
+    l'antislash devant tout caractère (`"a\.b"` → `a.b`, `"\d+"` → `d+`),
+    ce qui casse les regex de `gsub`, des conditions `=~ "..."` et des
+    motifs `grok`. Logstash, lui, garde le texte entre guillemets tel quel
+    (`a\.b`, `\d+`, `\"`). Les deux éléments de grammaire sont des
+    attributs de classe de `tree.PEG`, partagés par toutes les analyses :
+    on désactive leur déséchappement une seule fois (idempotent) et on se
+    contente de retirer les guillemets. Les regex `/.../` ne sont pas
+    concernées (déjà brutes).
+    """
+    for element in (_parser_tree.PEG.double_quoted_string, _parser_tree.PEG.single_quoted_string):
+        if getattr(element, "_rsyslogstach_brut", False):
+            continue
+        element.unquote_results = False
+        element.add_parse_action(_chaine_brute)
+        element._rsyslogstach_brut = True
+    logger.debug("_conserver_antislashs() | chaînes .conf lues brutes")
+
+
+_conserver_antislashs()
 
 
 @dataclass(frozen=True)
@@ -313,6 +360,8 @@ class PipelineInterpreter:
         """
         self._ast: list = Pipeline(pipeline_source).parse()
         self._dissect_cache: dict[str, Dissector] = {}
+        # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
+        self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
@@ -448,24 +497,52 @@ class PipelineInterpreter:
         """Dispatche un plugin `filter{}` vers son comportement (ou l'ignore, tracé)."""
         name, attrs = entry
         options = _normalize_attrs(attrs)
+        reussi: bool | None = None
         if name == "dissect":
-            self._apply_dissect(doc, options)
+            reussi = self._apply_dissect(doc, options)
+        elif name == "kv":
+            reussi = self._apply_kv(doc, options)
         elif name == "mutate":
-            self._apply_mutate(doc, options, now=now, on_missing=on_missing)
+            self._apply_mutate(doc, options, now=now, on_missing=on_missing)  # options communes incluses
         elif name == "translate":
-            self._apply_translate(doc, options, now=now, on_missing=on_missing)
+            reussi = self._apply_translate(doc, options, now=now, on_missing=on_missing)
         elif name == "mmdb":
-            self._apply_mmdb(doc, options)
+            reussi = self._apply_mmdb(doc, options)
         elif name == "geoip":
-            self._apply_geoip(doc, options)
+            reussi = self._apply_geoip(doc, options)
         elif name == "filters_json":
             self._apply_filters_json(doc, options, now=now, on_missing=on_missing)
         elif name == "date":
-            self._apply_date(doc, options)
+            reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
+        elif name == "fingerprint":
+            reussi = self._apply_fingerprint(entry, doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
+        # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
+        # après un filtre réussi, comme `filter_matched` de Logstash.
+        if reussi:
+            apply_common_options(doc, options, now=now, on_missing=on_missing)
+        logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
+
+    @traced
+    def _apply_fingerprint(self, entry: list, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`fingerprint { … }` natif (#114) — voir `fingerprint.FingerprintFilter`.
+
+        Une méthode inconnue est une erreur de configuration : journalisée
+        une fois, le bloc est ensuite sans effet (pas de tag).
+        """
+        if id(entry) not in self._fingerprint_cache:
+            try:
+                self._fingerprint_cache[id(entry)] = FingerprintFilter(options)
+            except ValueError as exc:
+                logger.warning(_("fingerprint ignoré : {}"), exc)
+                self._fingerprint_cache[id(entry)] = None
+        filtre = self._fingerprint_cache[id(entry)]
+        reussi = filtre is not None and filtre.apply(doc)
+        logger.debug("_apply_fingerprint: {}", reussi)
+        return reussi
 
     @traced
     def _apply_drop(self, options: dict[str, Any]) -> None:
@@ -492,11 +569,16 @@ class PipelineInterpreter:
         raise _DocumentDropped("drop natif")
 
     @traced
-    def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
-        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`."""
+    def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`.
+
+        Returns:
+            True si au moins un patron a été découpé (options communes, #116).
+        """
+        reussi = False
         mapping = options.get("mapping")
         if not isinstance(mapping, dict):
-            return
+            return False
         for source_field, pattern in mapping.items():
             value = doc.get(source_field)
             if not isinstance(value, str) or not isinstance(pattern, str):
@@ -512,6 +594,59 @@ class PipelineInterpreter:
             extracted = dissector.apply(value)
             if extracted is not None:
                 doc.update(extracted)
+                reussi = True
+        return reussi
+
+    @traced
+    def _apply_kv(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`kv { source => ... [target => ...] ... }` — plugin `kv` natif (#113).
+
+        Réutilise `filters.KeyValueFilter` (même algorithme que le step
+        `kv` de `--filters`, pas de duplication). Options du plugin
+        officiel : `source` (champ à découper, `"message"` par défaut),
+        `target` (hash de destination des paires, racine du document par
+        défaut — fusionné dans un hash existant, comme Logstash),
+        `field_split`, `value_split`, `include_keys`, `exclude_keys`,
+        `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values`.
+        Champ source absent ou non texte : rien (comme `dissect`), tracé.
+
+        Returns:
+            True si au moins une paire a été extraite (options communes, #116).
+        """
+        source = options.get("source", "message")
+        if not isinstance(source, str):
+            logger.debug("kv : source non texte, ignoré : {!r}", source)
+            return False
+        value = doc.get(source)
+        if not isinstance(value, str):
+            logger.debug("kv : champ source absent ou non texte, ignoré : {}", source)
+            return False
+        include_keys = options.get("include_keys")
+        exclude_keys = options.get("exclude_keys")
+        kv = KeyValueFilter(
+            field_split=options.get("field_split", " ") if isinstance(options.get("field_split"), str) else " ",
+            value_split=options.get("value_split", "=") if isinstance(options.get("value_split"), str) else "=",
+            prefix=options.get("prefix", "") if isinstance(options.get("prefix"), str) else "",
+            include_keys=[k for k in include_keys if isinstance(k, str)] if isinstance(include_keys, list) else None,
+            exclude_keys=[k for k in exclude_keys if isinstance(k, str)] if isinstance(exclude_keys, list) else None,
+            trim_key=options.get("trim_key", "") if isinstance(options.get("trim_key"), str) else "",
+            trim_value=options.get("trim_value", "") if isinstance(options.get("trim_value"), str) else "",
+            allow_duplicate_values=bool(options.get("allow_duplicate_values", True)),
+        )
+        pairs = kv.apply(value)
+        if not pairs:
+            return False
+        target = options.get("target")
+        if isinstance(target, str) and target:
+            path = parse_field_path(target)
+            base = resolve_field(doc, path)
+            if isinstance(base, dict):
+                base.update(pairs)
+            else:
+                assign_field(doc, path, dict(pairs))
+        else:
+            doc.update(pairs)
+        return True
 
     @traced
     def _apply_mutate(
@@ -532,7 +667,7 @@ class PipelineInterpreter:
     @traced
     def _apply_translate(
         self, doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None, on_missing: str
-    ) -> None:
+    ) -> bool:
         """`translate { dictionary_path => ... source => ... target => ... fallback => ... }`.
 
         Résout `source` (chemin `%{[a][b]}`, via `templates.resolve_field`),
@@ -555,29 +690,30 @@ class PipelineInterpreter:
         target = options.get("target")
         if not (isinstance(dictionary_path, str) and isinstance(source, str) and isinstance(target, str)):
             logger.debug("plugin translate mal formé (dictionary_path/source/target requis), ignoré")
-            return
+            return False
         dictionary = self._translate_dictionaries.get(dictionary_path)
         if dictionary is None:
             try:
                 dictionary = self._translate_dictionary_factory(dictionary_path)
             except (OSError, yaml.YAMLError) as exc:
                 logger.debug("dictionnaire translate illisible, ignoré : {} ({})", dictionary_path, exc)
-                return
+                return False
             self._translate_dictionaries[dictionary_path] = dictionary
         key = resolve_field(doc, parse_field_path(source))
         value = dictionary.lookup(key) if key is not _MISSING else None
         if value is None:
             fallback = options.get("fallback")
             if fallback is None:
-                return
+                return False
             if isinstance(fallback, str):
                 value = render_template(fallback, doc, now=now, on_missing=on_missing)
             else:
                 value = fallback
         assign_field(doc, parse_field_path(target), value)
+        return True
 
     @traced
-    def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`mmdb { source => ... database => ... target => ... }`.
 
         Résout `source` (chemin `%{[a][b]}`), interroge la base de
@@ -599,27 +735,28 @@ class PipelineInterpreter:
         target = options.get("target")
         if not (isinstance(source, str) and isinstance(database, str) and isinstance(target, str)):
             logger.debug("plugin mmdb mal formé (source/database/target requis), ignoré")
-            return
+            return False
         ip = resolve_field(doc, parse_field_path(source))
         if not isinstance(ip, str):
-            return
+            return False
         lookup = self._mmdb_lookups.get(database)
         if lookup is None:
             try:
                 lookup = self._mmdb_lookup_factory(database)
             except (OSError, maxminddb.InvalidDatabaseError) as exc:
                 logger.debug("base mmdb illisible, ignorée : {} ({})", database, exc)
-                return
+                return False
             self._mmdb_lookups[database] = lookup
         record = lookup.lookup(ip)
         if not record:
-            return
+            return False
         target_path = parse_field_path(target)
         for field_name, field_value in record.items():
             assign_field(doc, [*target_path, str(field_name)], field_value)
+        return True
 
     @traced
-    def _apply_geoip(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_geoip(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`geoip { source => ... [target => "geoip"] database => ... [fields] [tag_on_failure] }`.
 
         LE filtre officiel de Logstash. Contrairement à `mmdb` (base
@@ -670,27 +807,28 @@ class PipelineInterpreter:
         target = options.get("target", "geoip")
         if not (isinstance(source, str) and isinstance(database, str) and isinstance(target, str)):
             logger.debug("plugin geoip mal formé (source/database requis), ignoré")
-            return
+            return False
         ip = resolve_field(doc, parse_field_path(source))
         if not isinstance(ip, str):
             self._geoip_lookup_failure(doc, options)
-            return
+            return False
         lookup = self._geoip_lookups.get(database)
         if lookup is None:
             try:
                 lookup = self._geoip_lookup_factory(database)
             except (OSError, maxminddb.InvalidDatabaseError) as exc:
                 logger.debug("base geoip illisible, ignorée : {} ({})", database, exc)
-                return
+                return False
             self._geoip_lookups[database] = lookup
         record = lookup.lookup(ip)
         if not record:
             self._geoip_lookup_failure(doc, options)
-            return
+            return False
         fields = options.get("fields")
         if isinstance(fields, list) and fields:
             record = {key: value for key, value in record.items() if key in fields}
         assign_field(doc, parse_field_path(target), record)
+        return True
 
     @staticmethod
     @traced
@@ -747,7 +885,7 @@ class PipelineInterpreter:
             raise _DocumentDropped
 
     @traced
-    def _apply_date(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_date(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`filter { date { match => [champ, motif, ...] [target] [timezone] [tag_on_failure] } }`.
 
         Session 19 — item du nouvel audit Context7 (voir CLAUDE.md,
@@ -796,7 +934,7 @@ class PipelineInterpreter:
         (session 25). Un `match` mal formé reste ici ignoré (log DEBUG) :
         un `.conf` imparfait ne doit pas faire planter le traitement.
         """
-        DateFilter(options).apply(doc)
+        return DateFilter(options).apply(doc)
 
     # ------------------------------------------------------------------
     # output{}

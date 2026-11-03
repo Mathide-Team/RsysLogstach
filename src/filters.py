@@ -172,10 +172,27 @@ class RegexFilter:
 
 
 class KeyValueFilter:
-    """Extraction de paires clé/valeur (façon filtre kv de Logstash)."""
+    """Extraction de paires clé/valeur (façon filtre kv de Logstash).
+
+    Options du plugin officiel reprises (issue #113) : une clé répétée
+    dans la source produit une LISTE de valeurs (comme Logstash, qui
+    stocke un tableau par clé) ; `allow_duplicate_values => false`
+    déduplique ces listes en gardant l'ordre.
+    """
 
     @traced
-    def __init__(self, field_split: str = " ", value_split: str = "=", prefix: str = "") -> None:
+    def __init__(
+        self,
+        field_split: str = " ",
+        value_split: str = "=",
+        prefix: str = "",
+        *,
+        include_keys: list[str] | None = None,
+        exclude_keys: list[str] | None = None,
+        trim_key: str = "",
+        trim_value: str = "",
+        allow_duplicate_values: bool = True,
+    ) -> None:
         """Initialise l'extracteur.
 
         Args:
@@ -183,13 +200,27 @@ class KeyValueFilter:
             value_split: Séparateur entre clé et valeur ("=" par défaut).
             prefix: Préfixe ajouté à chaque nom de champ extrait, pour
                 éviter les collisions avec des champs existants.
+            include_keys: Si fournie, ne garder QUE ces clés (filtrage
+                avant préfixage, comme le plugin officiel).
+            exclude_keys: Si fournie, écarter ces clés.
+            trim_key: Caractères à retirer aux deux extrémités de chaque
+                clé (après `strip()` usuel).
+            trim_value: Caractères à retirer aux deux extrémités de
+                chaque valeur.
+            allow_duplicate_values: Si False, une clé répétée avec la
+                même valeur ne la garde qu'une fois (dédup, ordre préservé).
         """
         self._field_split = field_split
         self._value_split = value_split
         self._prefix = prefix
+        self._include_keys = include_keys
+        self._exclude_keys = exclude_keys
+        self._trim_key = trim_key
+        self._trim_value = trim_value
+        self._allow_duplicate_values = allow_duplicate_values
 
     @traced
-    def apply(self, source: str) -> dict[str, str]:
+    def apply(self, source: str) -> dict[str, str | list[str]]:
         """Découpe `source` en paires clé/valeur.
 
         Args:
@@ -197,17 +228,35 @@ class KeyValueFilter:
 
         Returns:
             Les paires trouvées (clés préfixées par `prefix`) ; les segments
-            sans séparateur value_split sont ignorés.
+            sans séparateur value_split sont ignorés. Une clé apparue une
+            seule fois vaut la chaîne trouvée ; une clé répétée vaut la
+            liste de ses valeurs (liste dédupliquée si
+            `allow_duplicate_values` vaut False).
         """
-        result: dict[str, str] = {}
+        paires: dict[str, list[str]] = {}
         for token in source.split(self._field_split):
             if self._value_split not in token:
                 continue
             key, _sep, value = token.partition(self._value_split)
             key = key.strip()
-            if key:
-                result[self._prefix + key] = value.strip()
-        return result
+            if self._trim_key:
+                key = key.strip(self._trim_key)
+            value = value.strip()
+            if self._trim_value:
+                value = value.strip(self._trim_value)
+            if not key:
+                continue
+            if self._include_keys is not None and key not in self._include_keys:
+                continue
+            if self._exclude_keys is not None and key in self._exclude_keys:
+                continue
+            paires.setdefault(key, []).append(value)
+        resultat: dict[str, str | list[str]] = {}
+        for key, values in paires.items():
+            if not self._allow_duplicate_values:
+                values = list(dict.fromkeys(values))
+            resultat[self._prefix + key] = values[0] if len(values) == 1 else values
+        return resultat
 
 
 class DropFilter:
@@ -402,6 +451,41 @@ def _assign_mutate_field(
         render_template(raw_value, doc, now=now, on_missing=on_missing) if isinstance(raw_value, str) else raw_value
     )
     assign_field(doc, parse_field_path(key), rendered)
+
+
+@traced
+def apply_common_options(
+    doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None = None, on_missing: str = "keep"
+) -> None:
+    """Options communes à tout filtre Logstash : `add_field`, `add_tag`, `remove_field`, `remove_tag` (#116).
+
+    Appliquées dans cet ordre, comme `filter_matched` de Logstash, et
+    seulement après un filtre RÉUSSI : `mutate` (via `apply_mutate`) et,
+    depuis #116, les autres plugins natifs de `interpreter` (`dissect`,
+    `date`, `geoip`, `translate`, `mmdb`…). Les valeurs d'`add_field` sont
+    des gabarits sprintf ; `add_tag`/`remove_tag` sont des listes plates.
+    """
+    logger.debug("apply_common_options() called | options={}", sorted(set(options) & set(COMMON_OPTION_KEYS)))
+    add_fields = options.get("add_field", {})
+    if isinstance(add_fields, dict):
+        for key, raw_value in add_fields.items():
+            _assign_mutate_field(doc, key, raw_value, now=now, on_missing=on_missing)
+    add_tags = options.get("add_tag")
+    if isinstance(add_tags, list):
+        tags = doc.setdefault("tags", [])
+        tags.extend(tag for tag in add_tags if tag not in tags)
+    remove_fields = options.get("remove_field", [])
+    if isinstance(remove_fields, list):
+        for field_ref in remove_fields:
+            remove_field_path(doc, parse_field_path(field_ref))
+    remove_tags = options.get("remove_tag")
+    if isinstance(remove_tags, list) and isinstance(doc.get("tags"), list):
+        doc["tags"] = [tag for tag in doc["tags"] if tag not in remove_tags]
+    logger.debug("apply_common_options() returning | tags={}", doc.get("tags"))
+
+
+#: Options communes à tout filtre (voir `apply_common_options`, #116).
+COMMON_OPTION_KEYS = ("add_field", "add_tag", "remove_field", "remove_tag")
 
 
 @traced
@@ -629,17 +713,7 @@ def apply_mutate(
         # que ses propres mutations) : sautées elles aussi si une
         # exception a déjà été levée plus haut, jamais appliquées "à
         # moitié" (session 23).
-        for key, raw_value in options.get("add_field", {}).items():
-            _assign_mutate_field(doc, key, raw_value, now=now, on_missing=on_missing)
-        add_tags = options.get("add_tag")
-        if isinstance(add_tags, list):
-            tags = doc.setdefault("tags", [])
-            tags.extend(tag for tag in add_tags if tag not in tags)
-        for field_ref in options.get("remove_field", []):
-            remove_field_path(doc, parse_field_path(field_ref))
-        remove_tags = options.get("remove_tag")
-        if isinstance(remove_tags, list) and isinstance(doc.get("tags"), list):
-            doc["tags"] = [tag for tag in doc["tags"] if tag not in remove_tags]
+        apply_common_options(doc, options, now=now, on_missing=on_missing)
     except Exception as exc:  # reproduit le `rescue => ex` générique du plugin réel
         logger.warning(_("exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"), exc)
         tag_on_failure = options.get("tag_on_failure", "_mutate_error")
@@ -1236,6 +1310,11 @@ class FilterPipeline:
                 field_split=step.get("field_split", " "),
                 value_split=step.get("value_split", "="),
                 prefix=step.get("prefix", ""),
+                include_keys=step.get("include_keys"),
+                exclude_keys=step.get("exclude_keys"),
+                trim_key=step.get("trim_key", ""),
+                trim_value=step.get("trim_value", ""),
+                allow_duplicate_values=step.get("allow_duplicate_values", True),
             )
         elif filter_type == "drop":
             if "words_file" in step:

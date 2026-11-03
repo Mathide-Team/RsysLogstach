@@ -24,7 +24,7 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `tracing.py` | Décorateur `@traced` (loguru) | — |
 | `util.py` | `add_failure_tags`, `load_json_file`, `opensearch_auth_from_env` | tracing |
 | `templates.py` | `render_template()` — syntaxe `%{field}` / `%{[a][b]}` | tracing |
-| `fingerprint.py` | `compute_fingerprint()` — sha256/sha1/md5 | templates, tracing |
+| `fingerprint.py` | `compute_fingerprint()` et filtre `FingerprintFilter` (#114) | templates, tracing |
 | `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | tracing |
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
@@ -89,6 +89,10 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
+Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`
+réutilise le même extracteur que le step `kv` de `--filters` (options
+`include_keys`, `exclude_keys`, `trim_key`, `trim_value`,
+`allow_duplicate_values` comprises ; clé répétée → liste de valeurs).
 
 ### Index OpenSearch
 
