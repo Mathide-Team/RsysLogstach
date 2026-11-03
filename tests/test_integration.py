@@ -414,7 +414,6 @@ class TestPipelineConf:
         assert index == "logs-test-app1"
         assert body["src"] == "app1"
 
-
     def test_clone_deux_evenements_indexes(self, tmp_path: Path) -> None:
         """#141 : un `clone` produit l'original ET la copie, tous deux indexés.
 
