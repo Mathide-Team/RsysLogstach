@@ -6,12 +6,11 @@ license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
 dependencies = [
     "loguru>=0.7",
-    "opensearch-py[async]",
     "prometheus-client==0.26.0",  # métriques /metrics (issue #35), version figée
     # Découpage #111 : la sémantique Logstash (gabarits, filtres, interprétation
     # des .conf, enrichissement) vit désormais dans PyStashTemplate, dépendance
     # figée sur le tag v0.1.0 — comme tout autre outil (…beat) pourrait le faire.
-    "pystashtemplate @ git+https://github.com/Mathilde-Team/PyStashTemplate.git@v0.1.0",
+    "pystashtemplate @ git+https://github.com/Mathilde-Team/PyStashTemplate.git@v0.2.0",
 ]
 
 [project.scripts]
@@ -79,3 +78,4 @@ source = ["src", "scripts"]
 # déclaré ici seulement : lu par `pytest --cov` dans le job Qualité de ci.yml.
 fail_under = 95
 show_missing = true
+
