@@ -58,7 +58,7 @@ class TestFilterDissect:
         interp = PipelineInterpreter(conf)
         doc = {"message": 123}
         interp.apply(doc)
-        assert doc == {"message": 123}
+        assert doc == {"message": 123, "tags": ["_dissectfailure"]}  # #117, comme Logstash
 
 
 class TestFilterKV:

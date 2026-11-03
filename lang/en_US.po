@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:07+0000\n"
+"POT-Creation-Date: 2026-11-03 12:15+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -38,6 +38,18 @@ msgstr "OpenSearch indexing failed permanently error={error}"
 #, python-brace-format
 msgid "Indexation OpenSearch échouée erreur={error}"
 msgstr "OpenSearch indexing failed error={error}"
+
+#: src/interpreter.py
+msgid "dissect : conversion impossible de {} en {}"
+msgstr "dissect: cannot convert {} to {}"
+
+#: src/interpreter.py
+msgid "dissect : type {} inconnu pour convert_datatype"
+msgstr "dissect: unknown type {} for convert_datatype"
+
+#: src/interpreter.py
+msgid "dissect : échec sur le champ {}"
+msgstr "dissect: failure on field {}"
 
 #: src/interpreter.py
 msgid "fingerprint ignoré : {}"
