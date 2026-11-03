@@ -89,6 +89,10 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
+Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`
+réutilise le même extracteur que le step `kv` de `--filters` (options
+`include_keys`, `exclude_keys`, `trim_key`, `trim_value`,
+`allow_duplicate_values` comprises ; clé répétée → liste de valeurs).
 
 ### Index OpenSearch
 

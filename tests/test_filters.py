@@ -124,6 +124,33 @@ class TestKeyValueFilter:
         kv = KeyValueFilter()
         assert kv.apply("=1 a=2") == {"a": "2"}
 
+    def test_cle_repetee_liste_de_valeurs(self) -> None:
+        # Comme le plugin kv officiel : une clé répétée vaut la liste de ses valeurs.
+        kv = KeyValueFilter()
+        assert kv.apply("tag=a tag=b tag=a") == {"tag": ["a", "b", "a"]}
+
+    def test_cle_repetee_allow_duplicate_values_false(self) -> None:
+        kv = KeyValueFilter(allow_duplicate_values=False)
+        assert kv.apply("tag=a tag=b tag=a") == {"tag": ["a", "b"]}
+
+    def test_include_keys_filtre_avant_prefixe(self) -> None:
+        kv = KeyValueFilter(prefix="kv_", include_keys=["user"])
+        assert kv.apply("user=admin action=login") == {"kv_user": "admin"}
+
+    def test_exclude_keys(self) -> None:
+        kv = KeyValueFilter(exclude_keys=["secret"])
+        assert kv.apply("user=admin secret=x") == {"user": "admin"}
+
+    def test_trim_key_et_trim_value(self) -> None:
+        # trim_key retire les apostrophes des clés, trim_value les guillemets des valeurs.
+        kv = KeyValueFilter(trim_key="'", trim_value='"')
+        assert kv.apply("'a'=\"1\" b=2") == {"a": "1", "b": "2"}
+
+    def test_cle_devenant_vide_apres_trim_ignoree(self) -> None:
+        kv = KeyValueFilter(trim_key="'")
+        # "''=1" : clé devenue vide après trim → ignorée.
+        assert kv.apply("''=1 a=2") == {"a": "2"}
+
     def test_separateurs_personnalises(self) -> None:
         kv = KeyValueFilter(field_split=",", value_split=":")
         assert kv.apply("a:1,b:2") == {"a": "1", "b": "2"}
