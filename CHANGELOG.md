@@ -9,6 +9,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 
 ### Corrigé
+- **Chaînes des `.conf`** (#128) : les antislashs entre guillemets sont conservés, comme Logstash (`config.support_escapes: false`) — `"a\.b"` vaut `a\.b` et `"\d+"` vaut `\d+`, au lieu d'être retirés par `logstash-pipeline-parser`. Les regex de `gsub` et des conditions `=~ "..."` redeviennent fidèles ; prérequis des motifs `grok` (#112).
 - **Gabarits** (#102) : `%{+%s}` rend les secondes depuis l'epoch de `@timestamp`, comme Logstash, au lieu de `%0`.
 
 ### Modifié

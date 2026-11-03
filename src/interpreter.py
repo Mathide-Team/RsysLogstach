@@ -253,6 +253,7 @@ from typing import Any
 import maxminddb
 import yaml
 from logstash_pipeline_parser import Pipeline
+from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
@@ -266,6 +267,46 @@ from util import add_failure_tags, load_json_file
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
 _REGEX_OPS = {"=~", "!~"}
 _BOOL_OPS = {"and", "or", "xor", "nand"}
+
+
+@traced
+def _chaine_brute(source: str, position: int, tokens: Any) -> str:
+    """Action d'analyse : texte d'une chaîne entre guillemets, guillemets retirés, antislashs gardés.
+
+    Signature complète `(source, position, jetons)` de pyparsing : le
+    décorateur `traced` masque l'arité réelle, pyparsing doit donc recevoir
+    la forme à trois arguments sans avoir à la deviner.
+    """
+    texte = tokens[0][1:-1]
+    logger.debug("_chaine_brute() | {} caractère(s)", len(texte))
+    return texte
+
+
+@traced
+def _conserver_antislashs() -> None:
+    r"""Chaînes `.conf` lues brutes, comme Logstash (`config.support_escapes: false`), issue #128.
+
+    `logstash-pipeline-parser==0.0.3` déclare les chaînes avec
+    `pp.QuotedString(..., esc_char="\\")` : pyparsing retire alors
+    l'antislash devant tout caractère (`"a\.b"` → `a.b`, `"\d+"` → `d+`),
+    ce qui casse les regex de `gsub`, des conditions `=~ "..."` et des
+    motifs `grok`. Logstash, lui, garde le texte entre guillemets tel quel
+    (`a\.b`, `\d+`, `\"`). Les deux éléments de grammaire sont des
+    attributs de classe de `tree.PEG`, partagés par toutes les analyses :
+    on désactive leur déséchappement une seule fois (idempotent) et on se
+    contente de retirer les guillemets. Les regex `/.../` ne sont pas
+    concernées (déjà brutes).
+    """
+    for element in (_parser_tree.PEG.double_quoted_string, _parser_tree.PEG.single_quoted_string):
+        if getattr(element, "_rsyslogstach_brut", False):
+            continue
+        element.unquote_results = False
+        element.add_parse_action(_chaine_brute)
+        element._rsyslogstach_brut = True
+    logger.debug("_conserver_antislashs() | chaînes .conf lues brutes")
+
+
+_conserver_antislashs()
 
 
 @dataclass(frozen=True)
