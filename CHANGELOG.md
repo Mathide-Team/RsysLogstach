@@ -4,6 +4,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+## [0.10.0] - 2026-11-03
+
 ### Ajouté
 - **Découpage #111 : RsysLogstach devient le connecteur rsyslog, la sémantique
   Logstash part dans [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)** (v0.1.0).
