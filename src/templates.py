@@ -43,13 +43,11 @@ Limites assumées (voir FEATURES.md) :
       crochets (section 12 : none/percent/ampersand) non implémentés —
       cas non rencontré dans les logs HPE Comware qui motivent ce projet.
     - Le format Java Time n'est pas réimplémenté dans sa généralité (pas
-      d'équivalent Python de `java.time.DateTimeFormatter`) : seuls les
-      motifs lettre par lettre usuels des exemples du document (y, M, d,
-      H, m, s, S, X/Z pour le décalage horaire, et le texte littéral entre
-      quotes simples façon 'T') sont traduits — voir `_format_letter_run`.
-      Une lettre hors de cette liste (ex. `E` jour de semaine, `W` semaine
-      de l'année) est recopiée telle quelle plutôt que de lever une
-      exception : repli sans surprise, pas un échec silencieux qui
+      d'équivalent Python de `java.time.DateTimeFormatter`) : les lettres
+      de `_format_letter_run` sont traduites (#123), avec semaines ISO et
+      textes en anglais quelle que soit la locale. Une lettre hors de cette
+      liste (ex. `F`, `B`) est recopiée telle quelle plutôt que de lever
+      une exception : repli sans surprise, pas un échec silencieux qui
       tronquerait le résultat.
 """
 
@@ -143,7 +141,7 @@ def render(
                 # (StringInterpolation.java), pas un motif Joda (issue #102).
                 parts.append(str(int(_event_timestamp(event, moment).timestamp())))
             else:
-                parts.append(_format_timestamp(token.value, _event_timestamp(event, moment)))
+                parts.append(_format_timestamp(token.value, _event_timestamp(event, moment), java=False))
         else:  # "newdate" : seul type restant produit par _tokenize
             if token.value == "TIME_NOW":
                 parts.append(_format_timestamp("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", moment))
@@ -433,10 +431,10 @@ def _event_timestamp(event: dict[str, Any], fallback: datetime) -> datetime:
 
 
 @traced
-def _format_timestamp(pattern: str, dt: datetime) -> str:
-    """Formate `dt` selon un motif de date façon Joda/Java Time (voir `_split_date_pattern`)."""
+def _format_timestamp(pattern: str, dt: datetime, java: bool = True) -> str:
+    """Formate `dt` selon un motif de date Java Time (`java`) ou Joda (voir `_split_date_pattern`)."""
     return "".join(
-        text if kind == "literal" else _format_letter_run(text, dt) for kind, text in _split_date_pattern(pattern)
+        text if kind == "literal" else _format_letter_run(text, dt, java) for kind, text in _split_date_pattern(pattern)
     )
 
 
@@ -485,34 +483,135 @@ def _split_date_pattern(pattern: str) -> list[tuple[str, str]]:
     return tokens
 
 
+_MOIS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
+_JOURS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+_TRIMESTRES = ("1st quarter", "2nd quarter", "3rd quarter", "4th quarter")
+
+
 @traced
-def _format_letter_run(run: str, dt: datetime) -> str:
-    """Formate un run de lettres identiques (ex. "yyyy", "SSS") pour `dt`."""
+def _texte_java(texte: str, length: int, *, java: bool) -> str:
+    """Texte selon le nombre de lettres : court (1-3), complet (4), étroit (5, Java Time)."""
+    if java and length == 5:
+        return texte[0]
+    return texte if length >= 4 else texte[:3]
+
+
+@traced
+def _semaine_du_mois(dt: datetime) -> int:
+    """Semaine ISO dans le mois (`W`) : semaine 1 = première semaine d'au moins 4 jours du mois."""
+    decalage = dt.replace(day=1).weekday()
+    semaine = (dt.day + decalage - 1) // 7
+    return semaine + 1 if 7 - decalage >= 4 else semaine
+
+
+@traced
+def _format_letter_run(run: str, dt: datetime, java: bool = True) -> str:
+    """Formate un run de lettres identiques (ex. "yyyy", "SSS") pour `dt`.
+
+    `java` choisit la syntaxe : Java Time (`%{{…}}`) ou Joda (`%{+…}`),
+    qui diffèrent pour `Y`, `x`, `e`, `C` et les lettres propres à Java
+    Time (`u`, `Q`, `q`, `L`, `c`, `n`, `N`, `A`, `V`, `O`). Les semaines
+    (`Y`, `w`, `W`, `e`, `c`, et `x` de Joda) suivent la norme ISO
+    (lundi, semaine 1 d'au moins 4 jours), les textes sont en anglais.
+    """
     letter = run[0]
     length = len(run)
-    if letter in ("y", "Y"):
+    annee_iso, semaine_iso, jour_iso = dt.isocalendar()
+    nombres: dict[str, int] = {
+        "M": dt.month,
+        "L": dt.month,
+        "d": dt.day,
+        "D": dt.timetuple().tm_yday,
+        "H": dt.hour,
+        "k": dt.hour or 24,
+        "K": dt.hour % 12,
+        "h": dt.hour % 12 or 12,
+        "m": dt.minute,
+        "s": dt.second,
+        "w": semaine_iso,
+    }
+    if java:
+        nombres.update(
+            {
+                "W": _semaine_du_mois(dt),
+                "e": jour_iso,
+                "c": jour_iso,
+                "Q": (dt.month - 1) // 3 + 1,
+                "q": (dt.month - 1) // 3 + 1,
+                "n": dt.microsecond * 1000,
+                "A": ((dt.hour * 60 + dt.minute) * 60 + dt.second) * 1000 + dt.microsecond // 1000,
+                "N": (((dt.hour * 60 + dt.minute) * 60 + dt.second) * 1_000_000 + dt.microsecond) * 1000,
+            }
+        )
+    else:
+        nombres.update({"e": jour_iso, "C": dt.year // 100})
+    annees = {"y": dt.year, "u": dt.year, "Y": annee_iso} if java else {"y": dt.year, "Y": dt.year, "x": annee_iso}
+    if letter in annees:
         # Joda et Java Time : seul `yy` est réduit à deux chiffres ; `y`,
         # `yyy`, `yyyy` donnent l'année complète (« 2026 »), complétée par des
         # zéros jusqu'au nombre de lettres (`yyyyy` → « 02026 »).
-        return f"{dt.year % 100:02d}" if length == 2 else f"{dt.year:0{length}d}"
-    if letter == "M":
-        return f"{dt.month:0{length}d}"
-    if letter == "d":
-        return f"{dt.day:0{length}d}"
-    if letter == "H":
-        return f"{dt.hour:0{length}d}"
-    if letter == "m":
-        return f"{dt.minute:0{length}d}"
-    if letter == "s":
-        return f"{dt.second:0{length}d}"
+        annee = annees[letter]
+        return f"{annee % 100:02d}" if length == 2 else f"{annee:0{length}d}"
+    if letter in ("M", "L") and length >= 3:
+        return _texte_java(_MOIS[dt.month - 1], length, java=java)
+    if letter == "E" or (java and letter in ("e", "c") and length >= 3):
+        return _texte_java(_JOURS[dt.weekday()], length, java=java)
+    if java and letter in ("Q", "q") and length >= 3:
+        trimestre = (dt.month - 1) // 3 + 1
+        return {3: f"Q{trimestre}", 4: _TRIMESTRES[trimestre - 1]}.get(length, str(trimestre))
+    if letter == "G":
+        return "Anno Domini" if java and length == 4 else ("A" if java and length == 5 else "AD")
+    if letter == "a":
+        return "AM" if dt.hour < 12 else "PM"
+    if letter in nombres:
+        return f"{nombres[letter]:0{length}d}"
     if letter == "S":
-        millis = f"{dt.microsecond // 1000:03d}"
-        return millis[:length] if length <= 3 else millis.ljust(length, "0")
+        return f"{dt.microsecond:06d}".ljust(length, "0")[:length]
     if letter in ("X", "x", "Z", "z"):
         return _format_offset(dt, letter, length)
-    # Lettre non gérée (ex. E jour de semaine, W semaine de l'année) :
-    # recopiée telle quelle — voir la docstring du module, "Limites assumées".
+    if java and letter == "V" and length == 2:
+        return _identifiant_fuseau(dt)
+    if java and letter == "O" and length in (1, 4):
+        return _decalage_gmt(dt, longue=length == 4)
+    # Lettre non gérée (ex. F, B) : recopiée telle quelle — voir la
+    # docstring du module, "Limites assumées".
+    logger.debug("_format_letter_run : lettre non gérée {!r}", run)
     return run
+
+
+@traced
+def _identifiant_fuseau(dt: datetime) -> str:
+    """`VV` : identifiant IANA du fuseau (`Europe/Paris`), sinon décalage (`Z`, `+02:00`)."""
+    cle = getattr(dt.tzinfo, "key", None)
+    if cle:
+        return cle
+    return _format_offset(dt, "X", 3)
+
+
+@traced
+def _decalage_gmt(dt: datetime, *, longue: bool) -> str:
+    """`O` (`GMT+2`, `GMT+5:30`) et `OOOO` (`GMT+02:00`) ; `GMT` pour un décalage nul."""
+    minutes = int((dt.utcoffset() or timedelta(0)).total_seconds() // 60)
+    if minutes == 0:
+        return "GMT"
+    signe = "+" if minutes > 0 else "-"
+    heures, reste = divmod(abs(minutes), 60)
+    if longue:
+        return f"GMT{signe}{heures:02d}:{reste:02d}"
+    return f"GMT{signe}{heures}" + (f":{reste:02d}" if reste else "")
 
 
 @traced
