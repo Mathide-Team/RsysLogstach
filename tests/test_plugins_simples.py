@@ -86,7 +86,10 @@ class TestPrune:
 
     def test_valeurs(self) -> None:
         doc = {"m": ["GET", "POST", "PUT"], "s": "x", "t": "garde", "u": "ok", "v": ["a"]}
-        conf = 'whitelist_values => { "m" => "^(GET|PUT)$" "s" => "y" "v" => "z" } blacklist_values => { "m" => "PUT" "t" => "rien" "u" => "ok" }'
+        conf = (
+            'whitelist_values => { "m" => "^(GET|PUT)$" "s" => "y" "v" => "z" }'
+            ' blacklist_values => { "m" => "PUT" "t" => "rien" "u" => "ok" }'
+        )
         assert _f("prune", doc, conf + ' add_tag => ["p"]') == {"m": ["GET"], "t": "garde", "tags": ["p"]}
 
 
