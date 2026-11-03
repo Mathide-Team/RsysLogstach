@@ -23,7 +23,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `%{[@metadata][champ]}` | fait | `@metadata` traité comme un champ racine ordinaire. |
 | `%{[tableau][0]}` | fait | Indice numérique de tableau. |
 | `%{+YYYY.MM.dd}` (Joda) | fait | Date de `@timestamp`, ancienne syntaxe. |
-| `%{{yyyy.MM.dd}}` (Java Time) | partiel | Lettres usuelles seulement (y, M, d, H, m, s, S, X/Z, texte entre quotes) ; une lettre inconnue (`E`, `W`…) est recopiée telle quelle. |
+| `%{{yyyy.MM.dd}}` (Java Time) | fait (#123) | Lettres `G u y Y Q q M L w W D d E e c a h K k H m s S n N A V O X x Z z` et texte entre quotes ; `%{+…}` suit les lettres Joda (`C`, `x` année de semaine…). Semaines ISO et textes en anglais (Java Time suit la locale de la JVM) ; `F` et `B` recopiées telles quelles. |
 | `%{{TIME_NOW}}` | fait | Heure du traitement, pas `@timestamp`. |
 | `%{+%s}` (epoch) | fait | Secondes depuis l'epoch de `@timestamp` (corrigé par #102 : rendait `%0`). |
 | Champ absent | fait | `--pipeline-on-missing` / `--filters-on-missing` : `keep` conserve `%{...}`, `empty` rend une chaîne vide. Un champ `null` se rend vide. |
@@ -49,7 +49,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 |---|---|---|
 | `mutate` | fait | Ordre officiel : `coerce`, `rename`, `update`, `replace`, `convert`, `gsub`, `uppercase`, `capitalize`, `lowercase`, `strip`, `split`, `join`, `merge`, `copy`, puis options communes. `tag_on_failure` (défaut `_mutate_error`). |
 | `dissect` | fait | `mapping` (sources imbriquées comprises), `convert_datatype` (`int`, `float`) et `tag_on_failure` (défaut `_dissectfailure` : source absente, vide ou sans correspondance) (#117). Pas de référence indirecte `%{&champ}`. |
-| `date` | fait | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `locale` (`fr`), `tag_on_failure`. `SSS` (millisecondes) et fuseaux textuels `z`/`ZZZ` (« CET », IDs IANA) reconnus (#118) ; les abréviations couvertes sont réduites (zones européennes et nord-américaines courantes). Autres lettres Java Time (E, W, D…) : #123. |
+| `date` | fait | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `locale` (`fr`), `tag_on_failure`. `SSS` (millisecondes) et fuseaux textuels `z`/`ZZZ` (« CET », IDs IANA) reconnus (#118) ; les abréviations couvertes sont réduites (zones européennes et nord-américaines courantes). Les lettres Java Time des gabarits (#123) ne concernent pas `match`. |
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
 | `translate` | fait | #119 : `source`/`field`, `target`/`destination` (défaut en place, `translation` si `ecs_compatibility => disabled`), `dictionary` en ligne, `dictionary_path` (YAML, JSON, CSV), `exact`, `regex`, `override`, `fallback` (gabarit sprintf), `iterate_on` (tableau de valeurs ou d'objets), `refresh_interval`, `refresh_behaviour` (`merge`/`replace`). Rechargement au premier document après l'intervalle (pas de minuterie) ; `yaml_dictionary_code_point_limit` et `yaml_load_strategy` sans effet ; clés comparées en texte. |
 | `drop` | fait | `percentage` compris. |
