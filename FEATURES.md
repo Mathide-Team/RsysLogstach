@@ -26,7 +26,7 @@
 - Parsing des fichiers `.conf` via `logstash-pipeline-parser`
 - Exemples : `pipeline.example.d/10_input`, `25_filter`, `30_output`
 - tag_on_failure pour date et geoip (sessions 19, 22, 24)
-- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), plus le pont `filters_json`
+- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent` (#121), plus le pont `filters_json`
 
 ### Indexation OpenSearch (module indexer.py)
 - `OpenSearchIndexer` — indexation asynchrone (opensearch-py[async])

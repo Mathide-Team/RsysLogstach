@@ -29,7 +29,8 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
 | `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, util |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, useragent, util |
+| `useragent.py` | `UserAgentFilter` — plugin `useragent` natif, ua-parser (#121) | templates, tracing |
 | `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
@@ -75,7 +76,7 @@ Voir `filters.example.json` :
 ]
 ```
 
-Step `date` (#34), mêmes options que le plugin `date` de Logstash : `{"type": "date", "match": ["horodatage", "ISO8601", "MMM dd HH:mm:ss"], "timezone": "Europe/Paris"}` écrit `@timestamp` (ou `target`) en ISO8601 UTC, et ajoute `_dateparsefailure` (ou `tag_on_failure`) aux tags si aucun motif ne correspond. `grok` n'est pas proposé : un step `regex` à groupes nommés le remplace.
+Step `date` (#34), mêmes options que le plugin `date` de Logstash : `{"type": "date", "match": ["horodatage", "ISO8601", "MMM dd HH:mm:ss"], "timezone": "Europe/Paris"}` écrit `@timestamp` (ou `target`) en ISO8601 UTC, et ajoute `_dateparsefailure` (ou `tag_on_failure`) aux tags si aucun motif ne correspond. Motifs `SSS` (millisecondes) et `z`/`ZZZ` (fuseau textuel : « CET », « Europe/Paris ») reconnus, ainsi que l'option `locale` (`fr` : noms de mois/jours français, #118). `grok` n'est pas proposé : un step `regex` à groupes nommés le remplace.
 
 ### Enrichissement (`enrich-dict.example.json`)
 
@@ -152,6 +153,35 @@ filter {
   nommés, classes POSIX et `\z` sont traduits ; `named_captures_only`
   toujours vrai ; `timeout_millis` non appliqué. Un motif invalide ou
   inconnu est ignoré (journal DEBUG), les autres motifs restent actifs.
+
+#### `useragent` (#121)
+
+```
+filter {
+  useragent {
+    source => "[user_agent][original]"
+    # target => "[user_agent]"  (défaut en mode ECS)
+  }
+}
+```
+
+- Analyse par [ua-parser](https://github.com/ua-parser/uap-python) (motifs
+  uap-core, comme le parseur Java de Logstash). Champs ECS écrits :
+  `[name]`, `[version]` (`89.0.4389.90`), `[device][name]`, `[os][name]`,
+  `[os][version]`, `[os][full]` sous la cible ; major, minor et patch dans
+  `[@metadata][filter][user_agent][version]` et `[…][os][version]`.
+- `ecs_compatibility => disabled` : cible vide (racine) par défaut et anciens
+  champs `name`, `device`, `major`, `minor`, `patch`, `version`, `os`,
+  `os_name`, `os_full`, `os_version`, `os_major`, `os_minor`, `os_patch`,
+  précédés de `prefix`.
+- Options : `source` (requis), `target`, `prefix`, `regexes` (fichier
+  `regexes.yaml` de uap-core), `lru_cache_size` (100 000). Un tableau donne
+  son premier élément ; source absente ou vide : rien. Si `target` égale
+  `source`, la source est remplacée.
+- Différences : motifs du paquet `ua-parser-builtins` figé dans
+  `pyproject.toml`, pas ceux du jar de Logstash ; un User-Agent récent ou
+  rare peut être classé autrement. Fichier `regexes` illisible : bloc ignoré
+  (journal DEBUG).
 
 Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
 
@@ -372,6 +402,7 @@ Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont ré
 | geoip2, maxminddb | Apache-2.0 |
 | prometheus-client | Apache-2.0 AND BSD-2-Clause |
 | pyyaml, mmh3, loguru | MIT |
+| ua-parser, ua-parser-builtins | Apache-2.0 |
 
 ## Suivi
 

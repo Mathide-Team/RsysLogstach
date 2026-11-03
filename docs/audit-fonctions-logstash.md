@@ -49,7 +49,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 |---|---|---|
 | `mutate` | fait | Ordre officiel : `coerce`, `rename`, `update`, `replace`, `convert`, `gsub`, `uppercase`, `capitalize`, `lowercase`, `strip`, `split`, `join`, `merge`, `copy`, puis options communes. `tag_on_failure` (défaut `_mutate_error`). |
 | `dissect` | fait | `mapping` (sources imbriquées comprises), `convert_datatype` (`int`, `float`) et `tag_on_failure` (défaut `_dissectfailure` : source absente, vide ou sans correspondance) (#117). Pas de référence indirecte `%{&champ}`. |
-| `date` | partiel | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `tag_on_failure`. Pas de `SSS` (millisecondes) ni de fuseau textuel (`z`, « CET »). `locale` non lu. |
+| `date` | fait | `match` (ISO8601, UNIX, UNIX_MS, motifs Joda), `target`, `timezone`, `locale` (`fr`), `tag_on_failure`. `SSS` (millisecondes) et fuseaux textuels `z`/`ZZZ` (« CET », IDs IANA) reconnus (#118) ; les abréviations couvertes sont réduites (zones européennes et nord-américaines courantes). Autres lettres Java Time (E, W, D…) : #123. |
 | `geoip` | partiel | `source`, `target`, `fields`, `tag_on_failure`. `database` obligatoire (pas de base GeoLite2 embarquée). |
 | `translate` | fait | #119 : `source`/`field`, `target`/`destination` (défaut en place, `translation` si `ecs_compatibility => disabled`), `dictionary` en ligne, `dictionary_path` (YAML, JSON, CSV), `exact`, `regex`, `override`, `fallback` (gabarit sprintf), `iterate_on` (tableau de valeurs ou d'objets), `refresh_interval`, `refresh_behaviour` (`merge`/`replace`). Rechargement au premier document après l'intervalle (pas de minuterie) ; `yaml_dictionary_code_point_limit` et `yaml_load_strategy` sans effet ; clés comparées en texte. |
 | `drop` | fait | `percentage` compris. |
@@ -60,7 +60,8 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `fingerprint` | fait | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
 | `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` | fait | Blocs natifs (#120, `src/simples.py`), options principales et défauts du plugin officiel ; `csv` : `convert` en `integer`, `float`, `boolean` seulement ; `prune` : champs de premier niveau, sans `interpolate`. |
 | `clone`, `split` | pas fait | Produisent plusieurs événements à partir d'un seul : l'interpréteur ne traite qu'un document à la fois (#120). |
-| `useragent`, `aggregate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
+| `useragent` | fait (#121) | `src/useragent.py`, ua-parser : champs ECS et anciens champs (`ecs_compatibility => disabled`), `prefix`, `regexes`, `lru_cache_size`. |
+| `aggregate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
 | `mmdb` (communautaire) | fait | Extension hors cœur Logstash : `database`, `source`, `target`. |
 | `filters_json` (propre au projet) | fait | Invoque un fichier `--filters` depuis un `.conf`. |
 
