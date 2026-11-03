@@ -29,7 +29,7 @@
 - Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent`, `xml` et `dns` (#121), plus le pont `filters_json`
 
 ### Indexation OpenSearch (module indexer.py)
-- `OpenSearchIndexer` — indexation asynchrone (opensearch-py[async])
+- `OpenSearchIndexer` — délègue l'envoi à la sortie `OpenSearchOutput` de PyStashTemplate (#160, API `_bulk`)
 - Authentification via variables d'environnement
 - Template d'index (`opensearch-index-template.json`)
 - Retenue (retry) sur erreurs transitoires (connexion refusée, timeout)
@@ -92,7 +92,7 @@
 
 ### Indexer (indexer.py)
 - Réponse du serveur aux redirections (imprimante/série/parallèle) traitée côté serveur, jamais remontée à l'API
-- **Multi-nœuds et failover (#37)** : le transport opensearch-py retente le nœud suivant en cas d'échec de connexion ; `retry_on_timeout=True` étend le repli aux délais d'attente (défaut de la bibliothèque : False). `health()` (GET /) alimente le health check périodique d'omprog (`--health-check-interval`, défaut 300 s, 0 = désactivé) — un échec journalise un warning, sans jamais interrompre le pont
+- **Multi-nœuds (#37, revu par #160)** : la sortie n'utilise que le premier nœud (avertissement si plusieurs) — l'échec rend le message à rsyslog qui le retient ; plus de failover transport. `health()` (GET /) alimente le health check périodique d'omprog (`--health-check-interval`, défaut 300 s, 0 = désactivé) — un échec journalise un warning, sans jamais interrompre le pont
 - **Fingerprint HMAC/MURMUR3 (#28)** : `--fingerprint-method murmur3` (entier 32 bits via `mmh3`, non cryptographique, format `_id` décimal) ; mode HMAC avec `--fingerprint-key` ou la variable d'environnement `FINGERPRINT_KEY` (clé de déploiement, `_id` incomparables entre clés ; pas de HMAC MURMUR3, comme le filtre Logstash)
 - **`_id` déterministe (#33)** : `--document-id-template` (champ identifiant naturel, lisible) et `--document-id-fingerprint` (hash du contenu, aucun champ naturel) peuvent être configurés **simultanément** — le fingerprint est prioritaire, jamais combinés dans un même `_id` ; sans l'un ni l'autre, `_id` aléatoire (historique). Documentation des cas d'usage dans le README
 
