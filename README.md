@@ -25,11 +25,11 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | `pystashtemplate.tracing` |
 | `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | `pystashtemplate.tracing` |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | i18n, `pystashtemplate.tracing` |
-| `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, i18n, `pystashtemplate.fingerprint`, `pystashtemplate.templates` |
+| `indexer.py` | `OpenSearchIndexer` — délègue à la sortie `OpenSearchOutput` de PyStashTemplate (#160), DLQ et fingerprint locaux | dlq, i18n, `pystashtemplate.fingerprint`, `pystashtemplate.templates`, `pystashtemplate.outputs.opensearch` |
 
 Depuis le découpage #111, la sémantique Logstash partagée vit dans le
 dépôt [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)
-(dépendance figée `v0.1.0`) : `templates` (gabarits `%{field}`), `filters`
+(dépendance figée `v0.2.0`) : `templates` (gabarits `%{field}`), `filters`
 (dissect, drop, regex, kv, mutate, geoip, translate, date), `interpreter`
 (`PipelineInterpreter`, `--pipeline-conf` Logstash), `enrichment`
 (dictionnaire + GeoIP), `grok`, `fingerprint`, `useragent`, `xmlfilter`,
@@ -310,7 +310,7 @@ par ordre de nom comme le fait Logstash. Seules les sorties `opensearch` et
 toujours vers les nœuds de `--opensearch-host`.
 `PYTHONPATH=src python3 src/omprog.py --help` donne la liste complète.
 
-**Multi-nœuds et failover (#37)** : `--opensearch-host` est répétable ; le transport opensearch-py retente le nœud suivant en cas d'échec de connexion ou de délai (`retry_on_timeout`), et un health check périodique journalise l'état du cluster (`--health-check-interval`, défaut 300 s, 0 = désactivé).
+**Multi-nœuds et failover (#37, revu par #160)** : `--opensearch-host` est répétable, mais la sortie `OpenSearchOutput` de PyStashTemplate (API `_bulk`) n'utilise que le PREMIER nœud — le failover revient à l'appelant : un échec rend le message à rsyslog (`RETRYABLE`), qui le retient et le renvoie. Un health check périodique journalise l'état du cluster (`--health-check-interval`, défaut 300 s, 0 = désactivé).
 
 ### Métriques Prometheus (issue #35)
 
@@ -505,7 +505,7 @@ Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont ré
 | Dépendance | Licence |
 |---|---|
 | logstash-pipeline-parser 0.0.3 | MIT |
-| opensearch-py | Apache-2.0 |
+| pystashtemplate (git, tag `v0.2.0`) | GPL-3.0-or-later |
 | geoip2, maxminddb | Apache-2.0 |
 | prometheus-client | Apache-2.0 AND BSD-2-Clause |
 | pyyaml, mmh3, loguru | MIT |

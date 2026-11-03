@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Authentification par certificat client (mTLS) vers OpenSearch (issue #100).
 
-Bout en bout réel : transport opensearch-py authentique, serveur HTTPS local
-qui EXIGE un certificat client signé par une autorité de test. Certificats
-générés par `openssl` dans un dossier temporaire (test sauté si `openssl`
-est absent).
+Bout en bout réel : sortie `OpenSearchOutput` de PyStashTemplate (client
+httpx authentique, issue #160), serveur HTTPS local qui EXIGE un
+certificat client signé par une autorité de test. Certificats générés
+par `openssl` dans un dossier temporaire (test sauté si `openssl` est
+absent).
 """
 
 from __future__ import annotations
@@ -53,7 +54,8 @@ async def _serveur_mtls(pki: Path) -> tuple[asyncio.Server, int, list[str]]:
         cert = writer.get_extra_info("peercert") or {}
         clients.extend(v for rdn in cert.get("subject", ()) for k, v in rdn if k == "commonName")
         await reader.read(65536)
-        body = b'{"result":"created","_id":"x"}'
+        # Réponse _bulk (l'envoi passe par l'API _bulk de la sortie, #160).
+        body = b'{"items":[{"index":{"status":201}}]}'
         writer.write(
             b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: "
             + str(len(body)).encode()

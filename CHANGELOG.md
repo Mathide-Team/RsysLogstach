@@ -4,6 +4,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+## [0.10.0] - 2026-11-03
+
 ### Ajouté
 - **Découpage #111 : RsysLogstach devient le connecteur rsyslog, la sémantique
   Logstash part dans [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)** (v0.1.0).
@@ -28,6 +30,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Gabarits** (#102) : `%{+%s}` rend les secondes depuis l'epoch de `@timestamp`, comme Logstash, au lieu de `%0`.
 
 ### Modifié
+- **Indexer délégué aux sorties PyStashTemplate** (#160) : `OpenSearchIndexer` garde sa signature et son contrat (`SendOutcome`, DLQ, fingerprint, gabarit) mais envoie via `OpenSearchOutput` (issue #12, API `_bulk`, un document par lot — accusé réel, `retry_max=0` parité) ; `dlq.py` devient un ré-export du port `pystashtemplate.dlq` (format identique) ; `install_index_template` passe par le client httpx de la sortie. Dépendance PyStashTemplate épinglée à `v0.2.0`, `opensearch-py` retirée. **Changements documentés** : le failover multi-nœuds du transport opensearch-py disparaît (premier nœud seul, avertissement si plusieurs — l'échec rend le message à rsyslog, qui le retient) ; `pipeline` est désormais transmis aussi pour `update`/`delete` (l'ancien client l'ignorait silencieusement) ; `PipelineInterpreter.apply_events` doit être attendu (PyStashTemplate #34).
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté

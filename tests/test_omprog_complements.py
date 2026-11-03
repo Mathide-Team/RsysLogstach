@@ -110,22 +110,22 @@ def test_serve_arret_deja_demande() -> None:
 
 
 def test_index_template_ancien_format(tmp_path: Path) -> None:
+    """Sans `template` : l'ancienne API `_template/{name}` (client httpx, #160)."""
     gabarit = tmp_path / "ancien.json"
     gabarit.write_text('{"index_patterns": ["switch-*"], "mappings": {}}', encoding="utf-8")
-    appels: list[tuple[str, str]] = []
+    appels: list[str] = []
 
-    class Indices:
-        async def put_index_template(self, name, body):
-            appels.append(("composable", name))
-
-        async def put_template(self, name, body):
-            appels.append(("ancien", name))
+    class Reponse:
+        def raise_for_status(self) -> None:
+            return None
 
     class Client:
-        indices = Indices()
+        async def put(self, chemin, json=None):
+            appels.append(chemin)
+            return Reponse()
 
-    _run(omprog.install_index_template(Client, "switch-logs", str(gabarit)))
-    assert appels == [("ancien", "switch-logs")]
+    _run(omprog.install_index_template(Client(), "switch-logs", str(gabarit)))
+    assert appels == ["_template/switch-logs"]
 
 
 class TestHealthCheckLoop:
@@ -212,15 +212,23 @@ def pont_de_test(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[
     construits: list[omprog.Bridge] = []
     gabarits: list[str] = []
 
+    class Reponse:
+        """Réponse HTTP minimale : toujours un succès (raise_for_status muet)."""
+
+        def raise_for_status(self) -> None:
+            return None
+
     class Client:
-        class indices:  # noqa: N801 - imite client.indices d'opensearch-py
-            @staticmethod
-            async def put_index_template(name, body):
-                gabarits.append(name)
+        """Client httpx minimal : enregistre le nom du gabarit installé."""
+
+        @staticmethod
+        async def put(chemin: str, json=None):  # noqa: A002 - imite httpx
+            gabarits.append(chemin.rsplit("/", 1)[-1])
+            return Reponse()
 
     def construire(args):
         indexeur = FakeIndexer()
-        indexeur._client = Client
+        indexeur._client = lambda: asyncio.sleep(0, result=Client)
         indexeur.health = lambda: asyncio.sleep(0, result={})
         bridge = omprog.Bridge(indexer=indexeur)
         construits.append(bridge)

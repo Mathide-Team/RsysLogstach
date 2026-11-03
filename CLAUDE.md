@@ -18,7 +18,7 @@ Pipeline asynchrone en Python qui reçoit les messages syslog via le module `omp
 ## Stack technique
 
 - Python >= 3.11, asyncio
-- opensearch-py[async] (indexation asynchrone)
+- pystashtemplate v0.2.0 (sorties : OpenSearchOutput, API _bulk — l'indexation n'a plus de client dédié)
 - geoip2 / maxminddb (enrichissement GeoIP)
 - pyyaml (configuration)
 - logstash-pipeline-parser==0.0.3 (parsing des pipelines .conf Logstash)
