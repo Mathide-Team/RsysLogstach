@@ -24,7 +24,7 @@ msgstr "unreadable geoip database: {} ({})"
 #: src/filters.py
 #, python-brace-format
 msgid "date : fuseau {name} devenu inconnu, UTC retenu erreur={error}"
-msgstr ""
+msgstr "date: timezone {name} no longer known, falling back to UTC error={error}"
 
 #: src/filters.py
 msgid "dictionnaire translate illisible : {} ({})"
