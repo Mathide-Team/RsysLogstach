@@ -22,6 +22,7 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 |--------|------|-------------|
 | `omprog.py` | Point d'entrée asyncio (rsyslog omprog) | tous les modules métier |
 | `tracing.py` | Décorateur `@traced` (loguru) | — |
+| `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | tracing |
 | `util.py` | `add_failure_tags`, `load_json_file`, `opensearch_auth_from_env` | tracing |
 | `templates.py` | `render_template()` — syntaxe `%{field}` / `%{[a][b]}` | tracing |
 | `fingerprint.py` | `compute_fingerprint()` et filtre `FingerprintFilter` (#114) | templates, tracing |
@@ -339,6 +340,40 @@ la même seconde), relisibles avec `zcat`.
 export OPENSEARCH_USER=admin
 export OPENSEARCH_PASSWORD=secret
 ```
+
+#### Dans le `.conf` (issue #125)
+
+Les options de connexion du plugin
+[logstash-output-opensearch](https://github.com/opensearch-project/logstash-output-opensearch)
+sont lues dans les blocs `opensearch{}` / `elasticsearch{}` de `output{}`,
+y compris dans les branches `if` :
+
+```
+output {
+  opensearch {
+    hosts => ["os1:9200", "os2:9200"]
+    ssl => true
+    ssl_certificate_verification => true
+    user => "admin"
+    password => "secret"
+    cacert => "/etc/rsyslogstach/ca.pem"
+    index => "logs-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+| Option | Effet | Équivalent prioritaire |
+|---|---|---|
+| `hosts` | URL ou liste ; sans schéma : `https` si `ssl => true`, `http` sinon ; port 9200 par défaut | `--opensearch-host` |
+| `ssl` | Schéma des URLs sans schéma ; erreur s'il contredit une URL `http://` / `https://` | — |
+| `ssl_certificate_verification => false` | Certificats non vérifiés | `--no-verify-certs` |
+| `user` / `password` | Authentification basique (les deux ensemble) | `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` |
+| `cacert`, `tls_certificate`, `tls_key` | Fichiers PEM (voir ci-dessous) | `--cacert`, `--tls-certificate`, `--tls-key` |
+
+Le pont n'ouvre qu'une connexion OpenSearch : si deux blocs donnent des
+valeurs différentes pour la même option, il refuse de démarrer. Une valeur
+`${VAR}` non remplacée est aussi refusée. Un mot de passe en clair dans le
+`.conf` est lisible par quiconque lit le fichier : préférer l'environnement.
 
 #### Par certificat client (mTLS, issue #100)
 
