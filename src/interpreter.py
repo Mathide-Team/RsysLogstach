@@ -490,6 +490,22 @@ class PipelineInterpreter:
         self._geoip_lookup_factory: Any = GeoIPLookup
 
     @property
+    def output_plugins(self) -> list[tuple[str, dict[str, Any]]]:
+        """Plugins de tous les blocs `output{}`, branches comprises, avec leurs options brutes (#125).
+
+        Options normalisées mais non rendues (pas de gabarit sprintf, pas de
+        document) : sert à lire la configuration statique d'une sortie, par
+        exemple la connexion `hosts`/`user`/`ssl` d'un `opensearch{}`.
+        """
+        logger.debug("output_plugins | {} section(s)", len(self._ast))
+        plugins: list[tuple[str, dict[str, Any]]] = []
+        for section in self._ast:
+            if section[0] == "output":
+                plugins.extend(_output_plugins(section[1]))
+        logger.debug("output_plugins | {} plugin(s)", len(plugins))
+        return plugins
+
+    @property
     def has_output(self) -> bool:
         """`True` si le pipeline compilé contient au moins un bloc `output{}`.
 
@@ -1256,6 +1272,21 @@ class PipelineInterpreter:
             # concrètement, voir tests/test_interpreter.py.
             return j + 1, body[j][1]
         return j, None
+
+
+@traced
+def _output_plugins(body: list) -> list[tuple[str, dict[str, Any]]]:
+    """Plugins d'un corps `output{}`, en descendant dans `if`/`else if`/`else` (voir `_branch_chain`)."""
+    plugins: list[tuple[str, dict[str, Any]]] = []
+    for entry in body:
+        if entry[0] in ("if", "else if"):
+            plugins.extend(_output_plugins(entry[1][-1][0]))
+        elif entry[0] == "else":
+            plugins.extend(_output_plugins(entry[1]))
+        else:
+            plugins.append((entry[0], _normalize_attrs(entry[1])))
+    logger.debug("_output_plugins | {}", len(plugins))
+    return plugins
 
 
 @traced
