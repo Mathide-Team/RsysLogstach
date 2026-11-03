@@ -309,9 +309,17 @@ class Bridge:
             enricher.enrich(doc)
         if self.interpreter is None:
             return await self._send(doc)
-        actions = self.interpreter.apply(doc, on_missing=self.pipeline_on_missing)
-        if actions is None:
-            return None
+        outcome: SendOutcome | None = None
+        # #141 : clone/split produisent plusieurs événements, tous indexés.
+        for event, actions in self.interpreter.apply_events(doc, on_missing=self.pipeline_on_missing):
+            result = await self._send_event(event, actions)
+            if result is SendOutcome.RETRYABLE or outcome is None:
+                outcome = result
+        return outcome
+
+    @traced
+    async def _send_event(self, doc: dict[str, Any], actions: list[Any]) -> SendOutcome | None:
+        """Indexe un événement du pipeline selon ses actions de sortie (`None` : aucune sortie gérée)."""
         if not self.interpreter.has_output:
             # Pipeline réduit à filter{} : destination statique de la ligne de commande.
             return await self._send(doc)

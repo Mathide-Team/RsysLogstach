@@ -16,6 +16,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- **`clone` et `split` natifs** (#141) : un message peut produire plusieurs événements. `clone` (`clones`, `type` ou tag selon `ecs_compatibility`) et `split` (`field`, `terminator`, `target`, tag `_splitparsefailure`) ; les nouveaux événements poursuivent le pipeline après le filtre et omprog indexe chacun selon ses sorties. Nouvelle méthode `PipelineInterpreter.apply_events` ; `apply` ne renvoie que les actions du document d'origine. Toutes les sections `filter{}` passent désormais avant les sections `output{}`, comme Logstash.
 - Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`,
   `delete`), `pipeline`, `routing` et `doc_as_upsert`, en gabarits sprintf.
 - `--field-reference-escape-style` (#124) : crochets échappés (`percent`,
