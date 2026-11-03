@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:13+0000\n"
+"POT-Creation-Date: 2026-11-03 12:21+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -269,4 +269,40 @@ msgstr ""
 #: src/omprog.py
 #, python-brace-format
 msgid "Arrêt du pont messages={count}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : type {} inconnu pour convert"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : analyse impossible du champ {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : conversion impossible de {} en {}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : lecture impossible de {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : réseau invalide ignoré : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "urldecode : décodage impossible : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "uuid ignoré : option target manquante"
+msgstr ""
+
+#: src/simples.py
+msgid "syslog_pri : valeur invalide {}"
+msgstr ""
+
+#: src/simples.py
+msgid "truncate ignoré : length_bytes doit être un entier positif"
 msgstr ""
