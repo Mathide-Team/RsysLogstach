@@ -29,9 +29,10 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
 | `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, useragent, util, xmlfilter |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | dnslookup, enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, useragent, util, xmlfilter |
 | `useragent.py` | `UserAgentFilter` — plugin `useragent` natif, ua-parser (#121) | templates, tracing |
 | `xmlfilter.py` | `XmlFilter` — plugin `xml` natif, lxml (#121) | templates, tracing, util |
+| `dnslookup.py` | `DnsFilter` — plugin `dns` natif, dnspython (#121) | templates, tracing, util |
 | `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
@@ -212,6 +213,37 @@ filter {
   rend le bloc invalide (ignoré, journal DEBUG).
 - Différences : lxml (libxml2) remplace Nokogiri et REXML ; un document
   sans élément racine, même en mode tolérant, ne donne aucun résultat XPath.
+
+#### `dns` (#121)
+
+```
+filter {
+  dns {
+    reverse => [ "[host][ip]" ]
+    action => "replace"
+    nameserver => { address => ["192.0.2.53"] search => ["lan"] }
+    hit_cache_size => 4096
+  }
+}
+```
+
+- `resolve` (nom → première adresse, IPv4 puis IPv6) et `reverse`
+  (adresse → premier nom) ; `action` `append` (défaut, le champ devient
+  `[valeur, résultat]`) ou `replace`.
+- Résolveurs dans l'ordre : `hostsfile`, `/etc/hosts`, puis `nameserver`
+  (chaîne, liste, ou hash `address`/`search`/`ndots`). Sans les deux :
+  `/etc/hosts` puis le DNS du système ; avec `hostsfile` seul : aucun DNS.
+- `timeout` (0,5 s), `max_retries` (2), `tag_on_timeout` (`_dnstimeout`),
+  caches `hit_cache_size`/`hit_cache_ttl` (0, 60 s) et
+  `failed_cache_size`/`failed_cache_ttl` (0, 5 s), noms IDNA.
+- Comme Logstash, un champ absent est sauté, mais plusieurs valeurs, une
+  valeur non textuelle, une adresse invalide ou un échec arrêtent le
+  filtre, sans options communes.
+- `RSYSLOGSTACH_DNS=off` coupe les requêtes réseau (fichiers hosts
+  seulement) ; les tests le positionnent.
+- Limite : les nombres écrits `"${VAR}"` ne sont pas encore remplacés
+  (#122) : le bloc est alors ignoré (journal DEBUG), c'est le cas de
+  `pipeline.example.d/25_…`.
 
 Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
 
@@ -434,6 +466,7 @@ Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont ré
 | pyyaml, mmh3, loguru | MIT |
 | ua-parser, ua-parser-builtins | Apache-2.0 |
 | lxml | BSD-3-Clause |
+| dnspython | ISC |
 
 ## Suivi
 

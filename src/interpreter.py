@@ -255,6 +255,7 @@ from logstash_pipeline_parser import Pipeline
 from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
+from dnslookup import DnsFilter
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import (
     DateFilter,
@@ -405,6 +406,9 @@ class PipelineInterpreter:
         self._useragent_filters: dict[str, UserAgentFilter | None] = {}
         # #121 : un XmlFilter par jeu d'options (None : bloc ignoré).
         self._xml_filters: dict[str, XmlFilter | None] = {}
+        # #121 : un DnsFilter par jeu d'options (None : bloc ignoré) ; ses
+        # caches durent donc autant que l'interpréteur, comme dans Logstash.
+        self._dns_filters: dict[str, DnsFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -566,6 +570,8 @@ class PipelineInterpreter:
             reussi = self._apply_useragent(doc, options)
         elif name == "xml":
             reussi = self._apply_xml(doc, options)
+        elif name == "dns":
+            reussi = self._apply_dns(doc, options)
         elif name in PLUGINS_SIMPLES:
             reussi = PLUGINS_SIMPLES[name](doc, options)
         elif name == "cidr":
@@ -684,6 +690,30 @@ class PipelineInterpreter:
                 filtre = None
             self._xml_filters[cle] = filtre
         filtre = self._xml_filters[cle]
+        if filtre is None:
+            return False
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_dns(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { dns { reverse => [...] resolve => [...] } }` — délègue à `dnslookup.DnsFilter` (#121).
+
+        Construit une fois par jeu d'options (clé JSON triée). Options
+        invalides (par exemple un `${VAR}` non résolu à la place d'un
+        nombre) : bloc ignoré, tracé, sans nouvel essai.
+
+        Returns:
+            True si le filtre est allé au bout (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._dns_filters:
+            try:
+                filtre: DnsFilter | None = DnsFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin dns ignoré : {}", exc)
+                filtre = None
+            self._dns_filters[cle] = filtre
+        filtre = self._dns_filters[cle]
         if filtre is None:
             return False
         return filtre.apply(doc)
