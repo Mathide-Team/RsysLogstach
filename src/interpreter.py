@@ -253,10 +253,14 @@ from typing import Any
 import maxminddb
 import yaml
 from logstash_pipeline_parser import Pipeline
+from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
+from fingerprint import FingerprintFilter
+from grok import GrokFilter
+from i18n import _
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -264,6 +268,46 @@ from util import add_failure_tags, load_json_file
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
 _REGEX_OPS = {"=~", "!~"}
 _BOOL_OPS = {"and", "or", "xor", "nand"}
+
+
+@traced
+def _chaine_brute(source: str, position: int, tokens: Any) -> str:
+    """Action d'analyse : texte d'une chaîne entre guillemets, guillemets retirés, antislashs gardés.
+
+    Signature complète `(source, position, jetons)` de pyparsing : le
+    décorateur `traced` masque l'arité réelle, pyparsing doit donc recevoir
+    la forme à trois arguments sans avoir à la deviner.
+    """
+    texte = tokens[0][1:-1]
+    logger.debug("_chaine_brute() | {} caractère(s)", len(texte))
+    return texte
+
+
+@traced
+def _conserver_antislashs() -> None:
+    r"""Chaînes `.conf` lues brutes, comme Logstash (`config.support_escapes: false`), issue #128.
+
+    `logstash-pipeline-parser==0.0.3` déclare les chaînes avec
+    `pp.QuotedString(..., esc_char="\\")` : pyparsing retire alors
+    l'antislash devant tout caractère (`"a\.b"` → `a.b`, `"\d+"` → `d+`),
+    ce qui casse les regex de `gsub`, des conditions `=~ "..."` et des
+    motifs `grok`. Logstash, lui, garde le texte entre guillemets tel quel
+    (`a\.b`, `\d+`, `\"`). Les deux éléments de grammaire sont des
+    attributs de classe de `tree.PEG`, partagés par toutes les analyses :
+    on désactive leur déséchappement une seule fois (idempotent) et on se
+    contente de retirer les guillemets. Les regex `/.../` ne sont pas
+    concernées (déjà brutes).
+    """
+    for element in (_parser_tree.PEG.double_quoted_string, _parser_tree.PEG.single_quoted_string):
+        if getattr(element, "_rsyslogstach_brut", False):
+            continue
+        element.unquote_results = False
+        element.add_parse_action(_chaine_brute)
+        element._rsyslogstach_brut = True
+    logger.debug("_conserver_antislashs() | chaînes .conf lues brutes")
+
+
+_conserver_antislashs()
 
 
 @dataclass(frozen=True)
@@ -317,6 +361,11 @@ class PipelineInterpreter:
         """
         self._ast: list = Pipeline(pipeline_source).parse()
         self._dissect_cache: dict[str, Dissector] = {}
+        # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
+        self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
+        # `grok` (#112) : un GrokFilter compilé par jeu d'options rencontré
+        # (motifs développés et regex compilées une seule fois).
+        self._grok_cache: dict[str, GrokFilter] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
@@ -471,6 +520,12 @@ class PipelineInterpreter:
             reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
+        elif name == "fingerprint":
+            reussi = self._apply_fingerprint(entry, doc, options)
+        elif name == "grok":
+            reussi = self._apply_grok(doc, options)
+        elif name == "json":
+            reussi = self._apply_json(doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -478,6 +533,24 @@ class PipelineInterpreter:
         if reussi:
             apply_common_options(doc, options, now=now, on_missing=on_missing)
         logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
+
+    @traced
+    def _apply_fingerprint(self, entry: list, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`fingerprint { … }` natif (#114) — voir `fingerprint.FingerprintFilter`.
+
+        Une méthode inconnue est une erreur de configuration : journalisée
+        une fois, le bloc est ensuite sans effet (pas de tag).
+        """
+        if id(entry) not in self._fingerprint_cache:
+            try:
+                self._fingerprint_cache[id(entry)] = FingerprintFilter(options)
+            except ValueError as exc:
+                logger.warning(_("fingerprint ignoré : {}"), exc)
+                self._fingerprint_cache[id(entry)] = None
+        filtre = self._fingerprint_cache[id(entry)]
+        reussi = filtre is not None and filtre.apply(doc)
+        logger.debug("_apply_fingerprint: {}", reussi)
+        return reussi
 
     @traced
     def _apply_drop(self, options: dict[str, Any]) -> None:
@@ -502,6 +575,65 @@ class PipelineInterpreter:
             return
         logger.debug("_apply_drop() raising | _DocumentDropped (percentage={})", pourcentage)
         raise _DocumentDropped("drop natif")
+
+    @traced
+    def _apply_grok(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { grok { match => { champ => motif } ... } }` — délègue à `grok.GrokFilter` (#112).
+
+        Compilé une fois par jeu d'options (clé JSON triée), comme
+        `_dissect_cache`. Options, défauts et différences avec Logstash :
+        docstring du module `grok`.
+
+        Returns:
+            True si un motif a correspondu (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        filtre = self._grok_cache.get(cle)
+        if filtre is None:
+            filtre = GrokFilter(options)
+            self._grok_cache[cle] = filtre
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_json(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`json { source target skip_on_invalid_json tag_on_failure }` natif (#115).
+
+        Comme le filtre officiel : source absente, rien ; JSON invalide,
+        `tag_on_failure` (défaut `_jsonparsefailure`) sauf si
+        `skip_on_invalid_json` ; sans `target`, l'objet décodé est fusionné
+        à la racine (un JSON non objet est alors un échec).
+
+        Returns:
+            True si le document a été modifié (options communes, #116).
+        """
+        source = options.get("source")
+        if not isinstance(source, str):
+            logger.warning(_("json ignoré : option source manquante"))
+            return False
+        texte = resolve_field(doc, parse_field_path(source))
+        if texte is _MISSING or texte is None:
+            return False
+        echec = options.get("tag_on_failure", ["_jsonparsefailure"])
+        try:
+            if not isinstance(texte, str):
+                raise TypeError(type(texte).__name__)
+            decode = json.loads(texte)
+        except (ValueError, TypeError) as exc:
+            if options.get("skip_on_invalid_json", False) is not True:
+                add_failure_tags(doc, echec)
+                logger.warning(_("json : analyse impossible du champ {} : {}"), source, exc)
+            return False
+        cible = options.get("target")
+        if isinstance(cible, str):
+            assign_field(doc, parse_field_path(cible), decode)
+        elif isinstance(decode, dict):
+            doc.update(decode)
+        else:
+            add_failure_tags(doc, echec)
+            logger.warning(_("json : un JSON non objet exige l'option target"))
+            return False
+        logger.debug("_apply_json: {} décodé", source)
+        return True
 
     @traced
     def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
