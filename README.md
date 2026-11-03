@@ -90,6 +90,8 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
+
+Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.
 Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`
 réutilise le même extracteur que le step `kv` de `--filters` (options
 `include_keys`, `exclude_keys`, `trim_key`, `trim_value`,
