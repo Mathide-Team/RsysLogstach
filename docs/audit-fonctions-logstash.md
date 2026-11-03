@@ -77,11 +77,12 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 
 | Fonction | Fait / pas fait | Commentaires |
 |---|---|---|
-| `opensearch { … }` / `elasticsearch { … }` | partiel | Seules `index` et `document_id` (gabarits sprintf) sont lues par document. |
+| `opensearch { … }` / `elasticsearch { … }` | partiel | Lues par document (gabarits sprintf) : `index`, `document_id`, `action`, `pipeline`, `routing`, `doc_as_upsert` (#126). |
 | `hosts`, `user`, `password`, `ssl`, `ssl_certificate_verification` | fait (#125) | Lus dans le `.conf` (branches comprises) ; `--opensearch-host`, `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` et `--no-verify-certs` restent prioritaires. Une seule connexion : valeurs différentes d'un bloc à l'autre refusées. |
 | `cacert`, `tls_certificate`, `tls_key` (mTLS) | fait | Mêmes noms que le plugin logstash-output-opensearch : `--cacert`, `--tls-certificate`, `--tls-key` (#100), ou dans le `.conf` (#125) ; la ligne de commande est prioritaire. |
 | `keystore`, `truststore` (JKS / PKCS#12) | pas fait | Format Java ; utiliser des fichiers PEM. |
-| `action`, `pipeline`, `routing`, `ilm_*`, `template*` | pas fait | `action` vaut toujours `index` ; le template d'index passe par `--index-template`. |
+| `action`, `pipeline`, `routing` | fait | #126 : `action` `index` (défaut), `create` (`op_type=create`), `update` (`doc_as_upsert` possible) ou `delete` ; `update` et `delete` exigent `document_id`, sinon le document part en DLQ ; `pipeline` est ignoré pour `update` et `delete`, que l'API n'accepte pas. Un document par requête, pas de `_bulk`. |
+| `ilm_*`, `template*` | pas fait | Le template d'index passe par `--index-template`. |
 | `stdout`, `file`, `http`, autres sorties | pas fait | Ignorées (trace de débogage). |
 
 ## Sections `input{}`

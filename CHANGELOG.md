@@ -16,6 +16,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`,
+  `delete`), `pipeline`, `routing` et `doc_as_upsert`, en gabarits sprintf.
 - `--field-reference-escape-style` (#124) : crochets échappés (`percent`,
   `ampersand`) dans les noms de champs, comme `field_reference.escape_style`.
 - **Connexion OpenSearch dans le `.conf`** (#125) : `hosts`, `user`, `password`, `ssl`, `ssl_certificate_verification`, `cacert`, `tls_certificate` et `tls_key` sont lus dans les blocs `opensearch{}` / `elasticsearch{}` de `output{}`, branches comprises. Sans schéma, une URL de `hosts` est en `http` sauf `ssl => true` (défaut Logstash). La ligne de commande et `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` restent prioritaires ; des valeurs différentes d'un bloc à l'autre, `ssl` contraire au schéma ou une variable `${VAR}` non remplacée bloquent le démarrage.
