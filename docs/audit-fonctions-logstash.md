@@ -57,7 +57,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `kv` | pas fait | Disponible dans `--filters` (step `kv`) et via `filters_json`, pas en bloc natif. |
 | `json` | pas fait | rsyslog envoie déjà du JSON (template `RSYSLOG_DebugFormat` / JSON) ; un champ texte contenant du JSON n'est pas décodé. |
 | `dns` | pas fait | Présent dans `pipeline.example.d/25_filter_…` : bloc ignoré (trace de débogage). |
-| `fingerprint` | partiel | Pas en bloc `filter{}` ; équivalent côté indexation : `--document-id-fingerprint`, `--fingerprint-method`, `--fingerprint-key`. |
+| `fingerprint` | oui | Bloc `filter{}` natif (#114) : `source`, `target`, `method` (SHA1, SHA256, SHA384, SHA512, MD5, MURMUR3, UUID, IPV4_NETWORK), `key` (HMAC ou masque IPv4), `base64encode`, `concatenate_sources`, `concatenate_all_fields`. Côté indexation : `--document-id-fingerprint`. |
 | `useragent`, `csv`, `cidr`, `clone`, `split`, `aggregate`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate`, `xml`, `ruby`, `elapsed`, `throttle`, `memcached`, `http`, `jdbc_*` | pas fait | Blocs acceptés par le parseur, sans effet. |
 | `mmdb` (communautaire) | fait | Extension hors cœur Logstash : `database`, `source`, `target`. |
 | `filters_json` (propre au projet) | fait | Invoque un fichier `--filters` depuis un `.conf`. |

@@ -31,14 +31,18 @@ MURMUR3 (comme le filtre Logstash, qui ne le propose pas non plus).
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import ipaddress
 import json
+import uuid
+from typing import Any
 
 import mmh3
-from loguru import logger  # noqa: F401 — logger de module exigé (SOCLE §8)
+from loguru import logger
 
-from templates import _MISSING, parse_field_path, render_template, resolve_field
+from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 
 _HASH_FACTORIES = {
@@ -136,3 +140,109 @@ def compute_fingerprint(
         # incomparables (empreinte "signée").
         return hmac.new(key.encode("utf-8"), payload.encode("utf-8"), factory).hexdigest()
     return factory(payload.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Filtre `fingerprint` natif (#114)
+# ---------------------------------------------------------------------------
+
+#: Méthodes du filtre `fingerprint` de Logstash prises en charge.
+FILTER_METHODS = ("SHA1", "SHA256", "SHA384", "SHA512", "MD5", "MURMUR3", "UUID", "IPV4_NETWORK")
+
+
+@traced
+def _valeur_texte(valeur: Any) -> str:
+    """Valeur rendue comme `"#{v}"` en Ruby : texte tel quel, objets en JSON trié."""
+    if isinstance(valeur, str):
+        return valeur
+    if isinstance(valeur, bool):
+        return "true" if valeur else "false"
+    if valeur is None:
+        return ""
+    if isinstance(valeur, (dict, list)):
+        return json.dumps(valeur, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return str(valeur)
+
+
+class FingerprintFilter:
+    """`fingerprint { source target method key base64encode concatenate_sources concatenate_all_fields }`.
+
+    Comportement de `logstash-filter-fingerprint` :
+
+    - `source` (`["message"]` par défaut), `target` (`"fingerprint"`),
+      `method` (`SHA256` par défaut ; `SHA1`, `SHA384`, `SHA512`, `MD5`,
+      `MURMUR3`, `UUID`, `IPV4_NETWORK`) ;
+    - sans concaténation, chaque champ source présent est empreint et écrit
+      dans `target` (le dernier l'emporte) ; un tableau donne un tableau
+      d'empreintes ;
+    - `concatenate_sources` : `|champ|valeur` pour chaque source triée,
+      puis `|` final ; `concatenate_all_fields` : idem sur tout le document ;
+    - `key` : HMAC pour les SHA/MD5 ; masque (préfixe CIDR, ex. 24) pour
+      `IPV4_NETWORK` ; `base64encode` : condensat en Base64 plutôt qu'en hexa.
+
+    Écart : une valeur hash ou tableau est rendue en JSON trié, pas avec
+    l'`inspect` Ruby ; l'empreinte diffère donc de Logstash pour ces
+    valeurs (identique pour du texte et des nombres).
+    """
+
+    @traced
+    def __init__(self, options: dict[str, Any]) -> None:
+        """Lit les options ; une méthode inconnue est signalée par ValueError."""
+        source = options.get("source", ["message"])
+        self.sources = [source] if isinstance(source, str) else [s for s in source if isinstance(s, str)]
+        self.target = str(options.get("target", "fingerprint"))
+        self.method = str(options.get("method", "SHA256")).upper()
+        if self.method not in FILTER_METHODS:
+            raise ValueError(f"méthode de fingerprint inconnue : {self.method!r} (attendu : {list(FILTER_METHODS)})")
+        key = options.get("key")
+        self.key = None if key is None else str(key)
+        self.base64 = options.get("base64encode", False) is True
+        self.concat = options.get("concatenate_sources", False) is True
+        self.concat_all = options.get("concatenate_all_fields", False) is True
+        logger.debug("FingerprintFilter: method={} sources={}", self.method, self.sources)
+
+    @traced
+    def empreinte(self, donnee: Any) -> Any:
+        """Empreinte d'une valeur selon `method` ; None si `IPV4_NETWORK` ne lit pas d'IPv4."""
+        texte = _valeur_texte(donnee)
+        if self.method == "UUID":
+            return str(uuid.uuid4())
+        if self.method == "MURMUR3":
+            return mmh3.hash(texte.encode("utf-8"), signed=False)
+        if self.method == "IPV4_NETWORK":
+            try:
+                reseau = ipaddress.IPv4Network(f"{texte}/{self.key or 32}", strict=False)
+            except ValueError as exc:
+                logger.debug("fingerprint IPV4_NETWORK : valeur ignorée ({})", exc)
+                return None
+            return str(reseau.network_address)
+        nom = self.method.lower()
+        if self.key is not None:
+            condensat = hmac.new(self.key.encode("utf-8"), texte.encode("utf-8"), nom).digest()
+        else:
+            condensat = hashlib.new(nom, texte.encode("utf-8")).digest()
+        return base64.b64encode(condensat).decode("ascii") if self.base64 else condensat.hex()
+
+    @traced
+    def apply(self, doc: dict[str, Any]) -> bool:
+        """Écrit l'empreinte dans `target` ; True si une empreinte a été écrite."""
+        chemin = parse_field_path(self.target)
+        if self.concat_all or self.concat:
+            if self.concat_all:
+                paires = sorted((k, v) for k, v in doc.items())
+            else:
+                paires = [(s, resolve_field(doc, parse_field_path(s))) for s in sorted(self.sources)]
+            texte = "".join(f"|{k}|{'' if v is _MISSING else _valeur_texte(v)}" for k, v in paires) + "|"
+            assign_field(doc, chemin, self.empreinte(texte))
+            logger.debug("FingerprintFilter.apply: concaténation")
+            return True
+        ecrit = False
+        for source in self.sources:
+            valeur = resolve_field(doc, parse_field_path(source))
+            if valeur is _MISSING:
+                continue
+            resultat = [self.empreinte(v) for v in valeur] if isinstance(valeur, list) else self.empreinte(valeur)
+            assign_field(doc, chemin, resultat)
+            ecrit = True
+        logger.debug("FingerprintFilter.apply: ecrit={}", ecrit)
+        return ecrit

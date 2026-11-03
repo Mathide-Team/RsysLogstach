@@ -15,6 +15,9 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Filtre `fingerprint { … }` natif dans `--pipeline-conf` (#114) : méthodes
+  SHA1/SHA256/SHA384/SHA512/MD5, HMAC, MURMUR3, UUID, IPV4_NETWORK,
+  `base64encode`, `concatenate_sources`, `concatenate_all_fields`.
 - **Options communes sur tous les filtres** (#116) : `add_field`, `add_tag`, `remove_field`, `remove_tag` s'appliquent après tout filtre natif réussi (`dissect`, `date`, `geoip`, `translate`, `mmdb`), plus seulement après `mutate`, comme `filter_matched` de Logstash ; jamais après un échec. Fonction partagée `filters.apply_common_options`.
 - **Audit des fonctions Logstash** (#101) : `docs/audit-fonctions-logstash.md`, tableau fonction / fait ou pas fait / commentaires (gabarits sprintf, conditions, plugins `filter{}` et `output{}`, options communes).
 - **Authentification par certificat client (mTLS)** (#100) : `--cacert`, `--tls-certificate`, `--tls-key`, mêmes noms que le plugin logstash-output-opensearch, transmis au client opensearch-py. Refus au démarrage si certificat et clé ne vont pas ensemble, si les nœuds sont en `http://` ou si un fichier manque. Test de bout en bout contre un serveur HTTPS local qui exige un certificat client.

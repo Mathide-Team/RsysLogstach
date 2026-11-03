@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 11:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:07+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -37,6 +37,10 @@ msgstr ""
 #: src/indexer.py
 #, python-brace-format
 msgid "Indexation OpenSearch échouée erreur={error}"
+msgstr ""
+
+#: src/interpreter.py
+msgid "fingerprint ignoré : {}"
 msgstr ""
 
 #: src/metrics.py

@@ -24,7 +24,7 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `tracing.py` | Décorateur `@traced` (loguru) | — |
 | `util.py` | `add_failure_tags`, `load_json_file`, `opensearch_auth_from_env` | tracing |
 | `templates.py` | `render_template()` — syntaxe `%{field}` / `%{[a][b]}` | tracing |
-| `fingerprint.py` | `compute_fingerprint()` — sha256/sha1/md5 | templates, tracing |
+| `fingerprint.py` | `compute_fingerprint()` et filtre `FingerprintFilter` (#114) | templates, tracing |
 | `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | tracing |
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |

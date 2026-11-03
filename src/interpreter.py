@@ -253,6 +253,8 @@ from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import DateFilter, Dissector, FilterPipeline, apply_common_options, apply_mutate
+from fingerprint import FingerprintFilter
+from i18n import _
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -313,6 +315,8 @@ class PipelineInterpreter:
         """
         self._ast: list = Pipeline(pipeline_source).parse()
         self._dissect_cache: dict[str, Dissector] = {}
+        # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
+        self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
@@ -465,6 +469,8 @@ class PipelineInterpreter:
             reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
+        elif name == "fingerprint":
+            reussi = self._apply_fingerprint(entry, doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -472,6 +478,24 @@ class PipelineInterpreter:
         if reussi:
             apply_common_options(doc, options, now=now, on_missing=on_missing)
         logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
+
+    @traced
+    def _apply_fingerprint(self, entry: list, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`fingerprint { … }` natif (#114) — voir `fingerprint.FingerprintFilter`.
+
+        Une méthode inconnue est une erreur de configuration : journalisée
+        une fois, le bloc est ensuite sans effet (pas de tag).
+        """
+        if id(entry) not in self._fingerprint_cache:
+            try:
+                self._fingerprint_cache[id(entry)] = FingerprintFilter(options)
+            except ValueError as exc:
+                logger.warning(_("fingerprint ignoré : {}"), exc)
+                self._fingerprint_cache[id(entry)] = None
+        filtre = self._fingerprint_cache[id(entry)]
+        reussi = filtre is not None and filtre.apply(doc)
+        logger.debug("_apply_fingerprint: {}", reussi)
+        return reussi
 
     @traced
     def _apply_drop(self, options: dict[str, Any]) -> None:
