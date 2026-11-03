@@ -40,6 +40,10 @@ seulement lue) :
       une simplification par rapport au comportement réel) ;
     - `filter { dissect { mapping => {...} } }` — réutilise
       `filters.Dissector` (même algorithme, pas de duplication) ;
+    - `filter { kv { ... } }` — réutilise `filters.KeyValueFilter`
+      (plugin `kv` natif, issue #113) : `source`, `target`,
+      `field_split`, `value_split`, `include_keys`, `exclude_keys`,
+      `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values` ;
     - `filter { mutate { ... } }` — `convert`/`remove_field` (la demande
       initiale) plus `rename`/`gsub`/`strip`/`add_field`/`add_tag`/
       `remove_tag` (item "Proposé" #1 de FEATURES.md, à portée de main une
@@ -252,7 +256,7 @@ from logstash_pipeline_parser import Pipeline
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
-from filters import DateFilter, Dissector, FilterPipeline, apply_common_options, apply_mutate
+from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -451,6 +455,8 @@ class PipelineInterpreter:
         reussi: bool | None = None
         if name == "dissect":
             reussi = self._apply_dissect(doc, options)
+        elif name == "kv":
+            reussi = self._apply_kv(doc, options)
         elif name == "mutate":
             self._apply_mutate(doc, options, now=now, on_missing=on_missing)  # options communes incluses
         elif name == "translate":
@@ -525,6 +531,57 @@ class PipelineInterpreter:
                 doc.update(extracted)
                 reussi = True
         return reussi
+
+    @traced
+    def _apply_kv(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`kv { source => ... [target => ...] ... }` — plugin `kv` natif (#113).
+
+        Réutilise `filters.KeyValueFilter` (même algorithme que le step
+        `kv` de `--filters`, pas de duplication). Options du plugin
+        officiel : `source` (champ à découper, `"message"` par défaut),
+        `target` (hash de destination des paires, racine du document par
+        défaut — fusionné dans un hash existant, comme Logstash),
+        `field_split`, `value_split`, `include_keys`, `exclude_keys`,
+        `prefix`, `trim_key`, `trim_value`, `allow_duplicate_values`.
+        Champ source absent ou non texte : rien (comme `dissect`), tracé.
+
+        Returns:
+            True si au moins une paire a été extraite (options communes, #116).
+        """
+        source = options.get("source", "message")
+        if not isinstance(source, str):
+            logger.debug("kv : source non texte, ignoré : {!r}", source)
+            return False
+        value = doc.get(source)
+        if not isinstance(value, str):
+            logger.debug("kv : champ source absent ou non texte, ignoré : {}", source)
+            return False
+        include_keys = options.get("include_keys")
+        exclude_keys = options.get("exclude_keys")
+        kv = KeyValueFilter(
+            field_split=options.get("field_split", " ") if isinstance(options.get("field_split"), str) else " ",
+            value_split=options.get("value_split", "=") if isinstance(options.get("value_split"), str) else "=",
+            prefix=options.get("prefix", "") if isinstance(options.get("prefix"), str) else "",
+            include_keys=[k for k in include_keys if isinstance(k, str)] if isinstance(include_keys, list) else None,
+            exclude_keys=[k for k in exclude_keys if isinstance(k, str)] if isinstance(exclude_keys, list) else None,
+            trim_key=options.get("trim_key", "") if isinstance(options.get("trim_key"), str) else "",
+            trim_value=options.get("trim_value", "") if isinstance(options.get("trim_value"), str) else "",
+            allow_duplicate_values=bool(options.get("allow_duplicate_values", True)),
+        )
+        pairs = kv.apply(value)
+        if not pairs:
+            return False
+        target = options.get("target")
+        if isinstance(target, str) and target:
+            path = parse_field_path(target)
+            base = resolve_field(doc, path)
+            if isinstance(base, dict):
+                base.update(pairs)
+            else:
+                assign_field(doc, path, dict(pairs))
+        else:
+            doc.update(pairs)
+        return True
 
     @traced
     def _apply_mutate(

@@ -61,6 +61,143 @@ class TestFilterDissect:
         assert doc == {"message": 123}
 
 
+class TestFilterKV:
+    def test_bloc_natif_basique(self) -> None:
+        conf = """
+        filter {
+            kv { source => "message" }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "user=admin action=login"}
+        interp.apply(doc)
+        assert doc == {
+            "message": "user=admin action=login",
+            "user": "admin",
+            "action": "login",
+        }
+
+    def test_options_completes(self) -> None:
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                field_split => ";"
+                value_split => ":"
+                prefix => "kv_"
+                exclude_keys => ["secret"]
+                trim_key => "'"
+                trim_value => "\\""
+                allow_duplicate_values => false
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "'user':\"admin\";tag:a;tag:b;tag:b;secret:x"}
+        interp.apply(doc)
+        # secret exclu, tag répété dédupliqué (et préfixé), quotes retirées.
+        assert doc == {
+            "message": "'user':\"admin\";tag:a;tag:b;tag:b;secret:x",
+            "kv_user": "admin",
+            "kv_tag": ["a", "b"],
+        }
+
+    def test_include_keys(self) -> None:
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                include_keys => ["user"]
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "user=admin action=login"}
+        interp.apply(doc)
+        assert doc == {
+            "message": "user=admin action=login",
+            "user": "admin",
+        }
+
+    def test_options_communes_apres_succes(self) -> None:
+        # #116 : add_tag appliqué après un kv réussi (filter_matched).
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                add_tag => ["decoupe"]
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "a=1", "tags": ["existant"]}
+        interp.apply(doc)
+        assert doc == {"message": "a=1", "a": "1", "tags": ["existant", "decoupe"]}
+
+    def test_options_communes_ignorees_si_aucune_paire(self) -> None:
+        conf = """
+        filter {
+            kv {
+                source => "message"
+                add_tag => ["decoupe"]
+            }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "sans separateur"}
+        interp.apply(doc)
+        assert doc == {"message": "sans separateur"}
+
+    def test_target_fusionne_dans_hash_existant(self) -> None:
+        conf = """
+        filter {
+            kv { source => "message" target => "pairs" }
+        }
+        """
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "a=1 b=2", "pairs": {"existing": "yes"}}
+        interp.apply(doc)
+        assert doc == {
+            "message": "a=1 b=2",
+            "pairs": {"existing": "yes", "a": "1", "b": "2"},
+        }
+
+    def test_target_cree_le_hash(self) -> None:
+        conf = 'filter { kv { source => "message" target => "p" } }'
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "a=1"}
+        interp.apply(doc)
+        assert doc == {"message": "a=1", "p": {"a": "1"}}
+
+    def test_target_non_hash_remplace(self) -> None:
+        conf = 'filter { kv { source => "message" target => "p" } }'
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "a=1", "p": "ancien"}
+        interp.apply(doc)
+        assert doc == {"message": "a=1", "p": {"a": "1"}}
+
+    def test_cle_repetee_liste(self) -> None:
+        conf = 'filter { kv { source => "message" } }'
+        interp = PipelineInterpreter(conf)
+        doc = {"message": "tag=a tag=b"}
+        interp.apply(doc)
+        assert doc == {"message": "tag=a tag=b", "tag": ["a", "b"]}
+
+    def test_source_absente_ignorer(self) -> None:
+        conf = 'filter { kv { source => "message" } }'
+        interp = PipelineInterpreter(conf)
+        doc = {"autre": "x"}
+        interp.apply(doc)
+        assert doc == {"autre": "x"}
+
+    def test_source_non_textuelle_ignorer(self) -> None:
+        conf = 'filter { kv { source => "message" } }'
+        interp = PipelineInterpreter(conf)
+        doc = {"message": 123}
+        interp.apply(doc)
+        assert doc == {"message": 123}
+
+
 class TestFilterMutate:
     def test_add_field_avec_gabarit(self) -> None:
         conf = """
