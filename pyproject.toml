@@ -71,7 +71,9 @@ testpaths = ["tests"]
 [tool.coverage.run]
 # Couverture des branches obligatoire (SOCLE §4, Mathilde-Team/.github#9).
 branch = true
-source = ["src"]
+# Périmètre réel du code : le pont (src/) et les scripts lancés par la CI
+# ou les tests (scripts/), issue #154.
+source = ["src", "scripts"]
 
 [tool.coverage.report]
 # Seuil bloquant de l'équipe (décision du 21/10/2026, Mathilde-Team/.github#9),
