@@ -27,7 +27,10 @@ et blocklist.example.txt pour le format attendu par `load_word_list`.
 
 from __future__ import annotations
 
+import csv
+import json
 import re
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -862,108 +865,305 @@ class GeoipFilter:
         self._lookup.close()
 
 
+@traced
+def _texte_ruby(valeur: Any) -> str:
+    """Conversion en texte façon Ruby `to_s` (clé de recherche `translate`, #119)."""
+    if valeur is None:
+        texte = ""
+    elif isinstance(valeur, bool):
+        texte = "true" if valeur else "false"
+    elif isinstance(valeur, (dict, list)):
+        texte = json.dumps(valeur, ensure_ascii=False, separators=(",", ":"))
+    else:
+        texte = str(valeur)
+    logger.debug("_texte_ruby() | {!r}", texte)
+    return texte
+
+
+@traced
+def _option_booleenne(valeur: Any, defaut: bool | None) -> bool | None:
+    """Option booléenne Logstash : `true`/`false` natifs ou en texte, sinon `defaut`."""
+    if isinstance(valeur, bool):
+        resultat: bool | None = valeur
+    elif isinstance(valeur, str) and valeur.strip().lower() in {"true", "false"}:
+        resultat = valeur.strip().lower() == "true"
+    else:
+        resultat = defaut
+    logger.debug("_option_booleenne() | {}", resultat)
+    return resultat
+
+
 class TranslateFilter:
-    """`translate` façon Logstash (dictionary_path/source/target/fallback), pour `--filters`.
+    """Plugin `translate` façon Logstash, partagé par `--filters` et `--pipeline-conf` (#119).
 
-    Répond à un item resté ouvert depuis la session 16 (`translate`/`mmdb`/
-    `date` implémentés SEULEMENT pour `--pipeline-conf`, voir FEATURES.md,
-    "Non fait délibérément" des sessions 21-24) : comme `mutate` (session 14)
-    et `geoip` (session 24) avant lui, `translate` est désormais partagé
-    entre les deux mécanismes de filtrage du projet. Choisi comme candidat
-    de cette session plutôt que `mmdb`/`date` : c'est le SEUL des trois
-    réellement utilisé dans le pipeline `.conf` réel de Mathilde
-    (`pipeline.example.d/25_filter_logstash-rsyslog-dns-geoip.conf`), et
-    utilisé trois fois (`ifName`/`ifNamevlan`/`ifSupervision`), toujours
-    avec un `fallback` sprintf — voir CLAUDE.md, entrée "Session 25", et
-    PATTERNS.md pour le détail de ce choix.
+    Reproduit `logstash-filter-translate` (`translate.rb`,
+    `single_value_update.rb`, `array_of_values_update.rb`,
+    `array_of_maps_value_update.rb`, `fetch_strategy/memory.rb`) :
 
-    Réutilise `enrichment.TranslateDictionary` — même chargement/recherche
-    que `interpreter.py::PipelineInterpreter._apply_translate` — donc AUCUNE
-    nouvelle arête de dépendances : `filters -> enrichment` existe déjà
-    depuis la session 24 (`GeoIPLookup`). Contrairement à `GeoipFilter`,
-    n'expose PAS de `close()` : `TranslateDictionary` charge son fichier
-    YAML une seule fois en mémoire à la construction et ne garde ensuite
-    aucune ressource externe ouverte (pas de `Reader` façon `maxminddb`/
-    `geoip2`) — voir sa docstring dans `enrichment.py`.
+    - `source` (ou `field`, ancien nom) : champ cherché, converti en texte
+      comme Ruby `to_s` (tableau : premier élément). Champ absent : rien.
+    - `target` (ou `destination`) : défaut `source` (traduction en place,
+      `ecs_compatibility` v1/v8 de Logstash 8), ou `translation` si
+      `ecs_compatibility => disabled`.
+    - `override` : faux par défaut, vrai pour une traduction en place ; un
+      `target` déjà présent n'est alors pas réécrit. `override => false`
+      en place est refusé, comme le plugin.
+    - `dictionary` (hash en ligne, ou tableau de paires) ou
+      `dictionary_path` (`.yml`/`.yaml`/`.json`/`.csv`, voir
+      `enrichment.TranslateDictionary`) ; les deux ensemble sont refusés.
+      Les clés sont comparées en texte.
+    - `exact` (vrai) et `regex` (faux) : correspondance exacte ; clés vues
+      comme regex (premier motif qui trouve, dans l'ordre du dictionnaire) ;
+      ou, avec `exact => false`, remplacement de chaque clé trouvée dans la
+      valeur (`"foofing"` -> `"barfing"`).
+    - `fallback` : gabarit sprintf écrit sans correspondance (une valeur
+      non textuelle est écrite telle quelle).
+    - `iterate_on` : égal à `source`, traduit chaque élément d'un tableau
+      vers un tableau `target` de même taille (`fallback` ou `None` sans
+      correspondance) ; sinon, tableau d'objets : `source`/`target` sont
+      relatifs à chaque objet, et `override` n'est pas consulté.
+    - `refresh_interval` (300 s) et `refresh_behaviour` (`merge` ou
+      `replace`) : le fichier est relu au premier document après
+      l'intervalle s'il a changé (pas de minuterie de fond ; 0 désactive).
 
-    Comme `GeoipFilter`, opère sur le document ENTIER en place (résout
-    lui-même `source`, chemin `%{[a][b]}` éventuellement imbriqué — le
-    pipeline réel de Mathilde utilise `source => "[@metadata][...]"`, pas
-    un champ plat) : `FilterPipeline` le reconnaît spécifiquement, il ne
-    passe donc pas par le chemin source/target générique des filtres
-    d'extraction (`Dissector`/`RegexFilter`/`KeyValueFilter`).
+    `yaml_dictionary_code_point_limit` et `yaml_load_strategy` sont acceptés
+    sans effet. Comme le plugin, les options communes s'appliquent si une
+    traduction a eu lieu ou si la traduction est en place.
 
-    Différence assumée avec `--pipeline-conf` (même principe que
-    `GeoipFilter`) : `interpreter.py` charge son dictionnaire YAML
-    PARESSEUSEMENT (au premier message concerné, fichier illisible ignoré
-    en DEBUG) — `FilterPipeline` connaît déjà TOUTES ses étapes dès sa
-    construction JSON, cette classe charge donc le dictionnaire à la
-    COMPILATION du step (`__init__`, comme `Dissector`/`RegexFilter`
-    compilent leur patron, ou `GeoipFilter` ouvre sa base) : un fichier YAML
-    introuvable/malformé fait ÉCHOUER `FilterPipeline(...)` tout de suite
-    (`ValueError`), cohérent avec son contrat déjà documenté. `fallback`
-    (gabarit sprintf éventuel, ex. `"index: %{[ifTable][index]}"`) est rendu
-    via `templates.render_template` — comme `MutateFilter.apply`, cette
-    méthode a donc besoin de `now`/`on_missing` (contrairement à
-    `GeoipFilter`, qui ne rend aucun gabarit) : `FilterPipeline.apply` les
-    lui transmet. `refresh_behaviour` (ex. "replace" dans le pipeline réel)
-    reste, comme pour `--pipeline-conf`, jamais honoré — un seul
-    `TranslateDictionary` chargé une fois par step, voir FEATURES.md,
-    "Limites connues".
+    Le dictionnaire fichier est chargé à la construction : un fichier
+    introuvable ou malformé, ou une option incohérente, lève `ValueError`
+    (refus de `FilterPipeline(...)` ; bloc ignoré par `interpreter.py`).
     """
 
     @traced
-    def __init__(self, options: dict[str, Any], *, dictionary_factory: Any = TranslateDictionary) -> None:
-        """Résout les options du step et charge le dictionnaire YAML.
+    def __init__(
+        self,
+        options: dict[str, Any],
+        *,
+        dictionary_factory: Any = TranslateDictionary,
+        clock: Any = time.monotonic,
+    ) -> None:
+        """Valide les options et charge le dictionnaire.
 
         Args:
-            options: Options du step ("dictionary_path"/"source"/"target"
-                requis, "fallback" optionnel — voir la docstring de la
-                classe et `interpreter.py::_apply_translate` pour leur
-                format exact, identique ici).
-            dictionary_factory: Callable construisant le
-                `enrichment.TranslateDictionary` à partir du chemin de
-                fichier ; injectable pour les tests (double de test), comme
-                `PipelineInterpreter._translate_dictionary_factory`.
+            options: Options du plugin (voir la docstring de la classe).
+            dictionary_factory: Callable `chemin -> TranslateDictionary`,
+                injectable pour les tests et pour le cache par chemin de
+                `PipelineInterpreter`.
+            clock: Horloge monotone (secondes) de `refresh_interval`.
 
         Raises:
-            ValueError: "dictionary_path"/"source"/"target" absents ou non
-                textuels, ou fichier YAML illisible/malformé.
+            ValueError: Options incohérentes, ou dictionnaire illisible.
         """
-        dictionary_path = options.get("dictionary_path")
-        source = options.get("source")
-        target = options.get("target")
-        if not (isinstance(dictionary_path, str) and isinstance(source, str) and isinstance(target, str)):
-            raise ValueError("step translate mal formé : 'dictionary_path', 'source' et 'target' (chaînes) sont requis")
-        try:
-            self._dictionary = dictionary_factory(dictionary_path)
-        except (OSError, yaml.YAMLError) as exc:
-            logger.error(_("dictionnaire translate illisible : {} ({})"), dictionary_path, exc)
-            raise ValueError(f"dictionnaire translate illisible : {dictionary_path} ({exc})") from exc
-        self._source = source
+        self._source = self._choisir(options, "source", "field")
+        if self._source is None:
+            raise ValueError("step translate mal formé : 'source' (chaîne) est requis")
+        target = self._choisir(options, "target", "destination")
+        if target is None:
+            ecs = str(options.get("ecs_compatibility", "v8")).strip().lower()
+            target = "translation" if ecs == "disabled" else self._source
         self._target = target
+        override = _option_booleenne(options.get("override"), None)
+        if self._source == self._target:
+            if override is False:
+                raise ValueError("step translate mal formé : 'override => false' sans effet en traduction en place")
+            override = True
+        self._override = bool(override)
+        self._exact = bool(_option_booleenne(options.get("exact"), True))
+        self._regex = bool(_option_booleenne(options.get("regex"), False))
         self._fallback = options.get("fallback")
+        iterate_on = options.get("iterate_on")
+        self._iterate_on = iterate_on if isinstance(iterate_on, str) and iterate_on else None
+        self._comportement = str(options.get("refresh_behaviour", "merge")).strip().lower()
+        if self._comportement not in {"merge", "replace"}:
+            raise ValueError(f"step translate mal formé : refresh_behaviour inconnu {self._comportement!r}")
+        try:
+            self._intervalle = float(options.get("refresh_interval", 300))
+        except (TypeError, ValueError) as exc:
+            logger.debug("translate : refresh_interval invalide : {}", exc)
+            intervalle = options.get("refresh_interval")
+            raise ValueError(f"step translate mal formé : refresh_interval {intervalle!r}") from exc
+        self._chemin_source = parse_field_path(self._source)
+        self._chemin_target = parse_field_path(self._target)
+        self._chemin_iteration = parse_field_path(self._iterate_on) if self._iterate_on else []
+        self._dictionary: Any = None
+        self._entrees = self._entrees_en_ligne(options.get("dictionary"))
+        dictionary_path = options.get("dictionary_path")
+        if dictionary_path is not None:
+            if not isinstance(dictionary_path, str):
+                raise ValueError("step translate mal formé : 'dictionary_path' doit être une chaîne")
+            if self._entrees:
+                raise ValueError("step translate mal formé : 'dictionary' et 'dictionary_path' sont exclusifs")
+            try:
+                self._dictionary = dictionary_factory(dictionary_path)
+            except (OSError, yaml.YAMLError, ValueError, csv.Error) as exc:
+                logger.error(_("dictionnaire translate illisible : {} ({})"), dictionary_path, exc)
+                raise ValueError(f"dictionnaire translate illisible : {dictionary_path} ({exc})") from exc
+            self._entrees = dict(self._dictionary.mapping)
+        self._clock = clock
+        self._dernier_rafraichissement = clock()
+        self._version = getattr(self._dictionary, "version", 0)
+        self._preparer()
+
+    @staticmethod
+    @traced
+    def _choisir(options: dict[str, Any], nom: str, ancien: str) -> str | None:
+        """Option `nom` ou son ancien nom `ancien` (les deux ensemble : refus, comme le plugin)."""
+        valeur, valeur_ancienne = options.get(nom), options.get(ancien)
+        if valeur is not None and valeur_ancienne is not None:
+            raise ValueError(f"step translate mal formé : '{ancien}' et '{nom}' sont exclusifs")
+        choisie = valeur if valeur is not None else valeur_ancienne
+        if choisie is not None and not (isinstance(choisie, str) and choisie):
+            raise ValueError(f"step translate mal formé : '{nom}' doit être une chaîne non vide")
+        return choisie
+
+    @staticmethod
+    @traced
+    def _entrees_en_ligne(dictionary: Any) -> dict[Any, Any]:
+        """`dictionary` en ligne : hash, ou tableau `[clé, valeur, clé, valeur…]`."""
+        if dictionary is None:
+            return {}
+        if isinstance(dictionary, dict):
+            return dict(dictionary)
+        if isinstance(dictionary, list) and len(dictionary) % 2 == 0:
+            return dict(zip(dictionary[::2], dictionary[1::2], strict=True))
+        raise ValueError("step translate mal formé : 'dictionary' doit être un hash ou une liste de paires")
 
     @traced
-    def apply(self, doc: dict[str, Any], *, now: datetime | None = None, on_missing: str = "keep") -> None:
-        """Recherche `doc[source]` dans le dictionnaire et écrit le résultat sous `target`, en place.
+    def _preparer(self) -> None:
+        """Construit la table en texte et les motifs de recherche (après chargement ou rechargement)."""
+        self._table = {_texte_ruby(cle): valeur for cle, valeur in self._entrees.items()}
+        self._motifs: list[tuple[str, re.Pattern[str]]] = []
+        if self._exact and self._regex:
+            for cle in self._table:
+                try:
+                    self._motifs.append((cle, re.compile(cle)))
+                except re.error as exc:
+                    logger.debug("translate : clé regex invalide ignorée {!r} ({})", cle, exc)
+        cles = list(self._table)
+        self._union = re.compile("|".join(re.escape(cle) for cle in cles)) if cles else None
+        logger.debug("TranslateFilter._preparer : {} entrée(s), {} motif(s)", len(self._table), len(self._motifs))
 
-        Sans correspondance : rend `fallback` comme gabarit sprintf (si
-        c'est une chaîne) ou l'utilise tel quel, et l'écrit à `target` —
-        exactement comme `interpreter.py::_apply_translate`. Sans
-        `fallback` et sans correspondance, `target` n'est pas touché.
+    @traced
+    def _rafraichir(self) -> None:
+        """Relit le fichier après `refresh_interval` (s'il a changé) et reconstruit la table."""
+        if self._dictionary is None or self._intervalle <= 0:
+            return
+        maintenant = self._clock()
+        if maintenant - self._dernier_rafraichissement < self._intervalle:
+            return
+        self._dernier_rafraichissement = maintenant
+        self._dictionary.recharger(self._comportement)
+        if self._dictionary.version != self._version:
+            self._version = self._dictionary.version
+            self._entrees = dict(self._dictionary.mapping)
+            self._preparer()
+        logger.debug("TranslateFilter._rafraichir : version {}", self._version)
+
+    @traced
+    def _chercher(self, texte: str) -> tuple[bool, Any]:
+        """Recherche `texte` selon `exact`/`regex` ; renvoie `(trouvé, valeur copiée)`."""
+        if self._exact and not self._regex:
+            if texte in self._table:
+                return True, deepcopy(self._table[texte])
+            return False, None
+        if self._exact:
+            for cle, motif in self._motifs:
+                if motif.search(texte):
+                    return True, deepcopy(self._table[cle])
+            return False, None
+        if self._union is None:
+            return False, None
+        remplace = self._union.sub(lambda trouve: _texte_ruby(self._table[trouve.group(0)]), texte)
+        return (True, remplace) if remplace != texte else (False, None)
+
+    @traced
+    def _repli(self, doc: dict[str, Any], now: datetime | None, on_missing: str) -> Any:
+        """Valeur de `fallback` : gabarit sprintf rendu, ou valeur non textuelle telle quelle."""
+        if isinstance(self._fallback, str):
+            return render_template(self._fallback, doc, now=now, on_missing=on_missing)
+        return self._fallback
+
+    @traced
+    def apply(self, doc: dict[str, Any], *, now: datetime | None = None, on_missing: str = "keep") -> bool:
+        """Traduit le document en place.
+
+        Returns:
+            True si les options communes doivent suivre (traduction, repli
+            ou traduction en place), comme `filter_matched` du plugin.
         """
-        key = resolve_field(doc, parse_field_path(self._source))
-        value = self._dictionary.lookup(key) if key is not _MISSING else None
-        if value is None:
-            fallback = self._fallback
-            if fallback is None:
-                return
-            if isinstance(fallback, str):
-                value = render_template(fallback, doc, now=now, on_missing=on_missing)
+        self._rafraichir()
+        if self._iterate_on is None:
+            reussi = self._valeur_simple(doc, now, on_missing)
+        elif self._iterate_on == self._source:
+            reussi = self._tableau_de_valeurs(doc, now, on_missing)
+        else:
+            reussi = self._tableau_d_objets(doc, now, on_missing)
+        resultat = bool(reussi) or (reussi is not None and self._source == self._target)
+        logger.debug("TranslateFilter.apply : {}", resultat)
+        return resultat
+
+    @traced
+    def _cible_libre(self, doc: dict[str, Any]) -> bool:
+        """Faux si `target` existe déjà et que `override` est faux."""
+        return self._override or resolve_field(doc, self._chemin_target) is _MISSING
+
+    @traced
+    def _valeur_simple(self, doc: dict[str, Any], now: datetime | None, on_missing: str) -> bool | None:
+        """`SingleValueUpdate` : None si le filtre ne s'applique pas (cible occupée, source absente)."""
+        valeur = resolve_field(doc, self._chemin_source)
+        if not self._cible_libre(doc) or valeur is _MISSING:
+            return None
+        if isinstance(valeur, list):
+            valeur = valeur[0] if valeur else None
+        trouve, traduction = self._chercher(_texte_ruby(valeur))
+        if trouve:
+            assign_field(doc, self._chemin_target, traduction)
+        elif self._fallback is not None:
+            assign_field(doc, self._chemin_target, self._repli(doc, now, on_missing))
+            trouve = True
+        return trouve
+
+    @traced
+    def _tableau_de_valeurs(self, doc: dict[str, Any], now: datetime | None, on_missing: str) -> bool | None:
+        """`ArrayOfValuesUpdate` : `iterate_on == source`, tableau traduit élément par élément."""
+        valeurs = resolve_field(doc, self._chemin_iteration)
+        if not self._cible_libre(doc) or valeurs is _MISSING:
+            return None
+        if not isinstance(valeurs, list):
+            valeurs = [] if valeurs is None else [valeurs]
+        repli = self._repli(doc, now, on_missing) if self._fallback is not None else None
+        traductions = []
+        for element in valeurs:
+            trouve, traduction = self._chercher(_texte_ruby(element))
+            traductions.append(traduction if trouve else repli)
+        assign_field(doc, self._chemin_target, traductions)
+        return any(traductions)
+
+    @traced
+    def _tableau_d_objets(self, doc: dict[str, Any], now: datetime | None, on_missing: str) -> bool | None:
+        """`ArrayOfMapsValueUpdate` : `source`/`target` relatifs à chaque objet de `iterate_on`."""
+        objets = resolve_field(doc, self._chemin_iteration)
+        if objets is _MISSING:
+            return None
+        if not isinstance(objets, list):
+            objets = [] if objets is None else [objets]
+        reussi = False
+        for objet in objets:
+            if not isinstance(objet, dict):
+                continue
+            valeur = resolve_field(objet, self._chemin_source)
+            if valeur is _MISSING or valeur is None:
+                continue
+            trouve, traduction = self._chercher(_texte_ruby(valeur))
+            if trouve:
+                assign_field(objet, self._chemin_target, traduction)
+            elif self._fallback is not None:
+                assign_field(objet, self._chemin_target, self._repli(doc, now, on_missing))
             else:
-                value = fallback
-        assign_field(doc, parse_field_path(self._target), value)
+                continue
+            reussi = True
+        return reussi
 
 
 # ----------------------------------------------------------------------
@@ -1540,7 +1740,7 @@ class FilterPipeline:
                 compiled.apply(doc)
                 continue
             if isinstance(compiled, TranslateFilter):
-                compiled.apply(doc, now=now, on_missing=on_missing)
+                compiled.apply(doc, now=now, on_missing=on_missing)  # options communes : non lues par --filters
                 continue
             if isinstance(compiled, DateFilter):
                 compiled.apply(doc)

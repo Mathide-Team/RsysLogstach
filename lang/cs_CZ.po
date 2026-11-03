@@ -45,6 +45,18 @@ msgid "Indexation OpenSearch échouée erreur={error}"
 msgstr ""
 
 #: src/interpreter.py
+msgid "dissect : conversion impossible de {} en {}"
+msgstr ""
+
+#: src/interpreter.py
+msgid "dissect : type {} inconnu pour convert_datatype"
+msgstr ""
+
+#: src/interpreter.py
+msgid "dissect : échec sur le champ {}"
+msgstr ""
+
+#: src/interpreter.py
 msgid "fingerprint ignoré : {}"
 msgstr ""
 
@@ -274,4 +286,40 @@ msgstr ""
 #: src/omprog.py
 #, python-brace-format
 msgid "Échec inattendu du traitement d'un message erreur={error}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : lecture impossible de {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "cidr : réseau invalide ignoré : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : analyse impossible du champ {} : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : conversion impossible de {} en {}"
+msgstr ""
+
+#: src/simples.py
+msgid "csv : type {} inconnu pour convert"
+msgstr ""
+
+#: src/simples.py
+msgid "syslog_pri : valeur invalide {}"
+msgstr ""
+
+#: src/simples.py
+msgid "truncate ignoré : length_bytes doit être un entier positif"
+msgstr ""
+
+#: src/simples.py
+msgid "urldecode : décodage impossible : {}"
+msgstr ""
+
+#: src/simples.py
+msgid "uuid ignoré : option target manquante"
 msgstr ""

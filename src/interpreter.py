@@ -205,10 +205,10 @@ connues") :
       faire planter le traitement d'un message). `timezone` n'est consulté
       QUE si le motif ne porte lui-même aucune information de fuseau —
       comme Logstash, jamais pour re-décaler un horodatage déjà zoné.
-    - `translate` : `refresh_behaviour` n'est pas honoré (dictionnaire
-      chargé une seule fois, jamais relu — voir
-      `enrichment.TranslateDictionary`) ; une clé non hachable (`source`
-      résolu en liste/dict) est traitée comme absente, pas une erreur.
+    - `translate` (#119) : délégué à `filters.TranslateFilter` ; le
+      rechargement (`refresh_interval`/`refresh_behaviour`) a lieu au
+      premier document après l'intervalle, pas sur une minuterie de fond.
+      Les clés sont comparées en texte (Ruby `to_s`).
     - `mmdb` : aucun schéma de champs n'est imposé (voir
       `enrichment.GenericMmdbLookup`) — l'enregistrement brut de la base
       est fusionné tel quel sous `target`, un niveau de profondeur
@@ -251,16 +251,25 @@ from pathlib import PurePath
 from typing import Any
 
 import maxminddb
-import yaml
 from logstash_pipeline_parser import Pipeline
 from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
-from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
+from filters import (
+    DateFilter,
+    Dissector,
+    FilterPipeline,
+    KeyValueFilter,
+    TranslateFilter,
+    apply_common_options,
+    apply_mutate,
+)
 from fingerprint import FingerprintFilter
 from grok import GrokFilter
 from i18n import _
+from simples import PLUGINS as PLUGINS_SIMPLES
+from simples import appliquer_cidr, reseaux_cidr
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -340,6 +349,23 @@ class _DocumentDropped(Exception):
     """
 
 
+@traced
+def _convertir_dissect(doc: dict[str, Any], champ: str, type_cible: Any) -> None:
+    """`convert_datatype` de dissect (#117) : `int` ou `float`, valeur laissée telle quelle si impossible."""
+    chemin = parse_field_path(champ)
+    valeur = resolve_field(doc, chemin)
+    if valeur is _MISSING:
+        return
+    convertisseurs = {"int": int, "float": float}
+    if type_cible not in convertisseurs:
+        logger.warning(_("dissect : type {} inconnu pour convert_datatype"), type_cible)
+        return
+    try:
+        assign_field(doc, chemin, convertisseurs[type_cible](valeur))
+    except (TypeError, ValueError):
+        logger.warning(_("dissect : conversion impossible de {} en {}"), champ, type_cible)
+
+
 class PipelineInterpreter:
     """Interprète un pipeline Logstash complet, structure via `logstash_pipeline_parser`.
 
@@ -363,12 +389,16 @@ class PipelineInterpreter:
         self._dissect_cache: dict[str, Dissector] = {}
         # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
         self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
+        # #120 : réseaux d'un bloc cidr, lus une fois (clé id(entry)).
+        self._cidr_cache: dict[int, list[Any]] = {}
         # `grok` (#112) : un GrokFilter compilé par jeu d'options rencontré
         # (motifs développés et regex compilées une seule fois).
         self._grok_cache: dict[str, GrokFilter] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
+        # #119 : un TranslateFilter par jeu d'options (None : bloc ignoré).
+        self._translate_filters: dict[str, TranslateFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -526,6 +556,12 @@ class PipelineInterpreter:
             reussi = self._apply_grok(doc, options)
         elif name == "json":
             reussi = self._apply_json(doc, options)
+        elif name in PLUGINS_SIMPLES:
+            reussi = PLUGINS_SIMPLES[name](doc, options)
+        elif name == "cidr":
+            if id(entry) not in self._cidr_cache:
+                self._cidr_cache[id(entry)] = reseaux_cidr(options)
+            reussi = appliquer_cidr(doc, options, self._cidr_cache[id(entry)])
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -637,32 +673,56 @@ class PipelineInterpreter:
 
     @traced
     def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
-        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`.
+        """`dissect { mapping convert_datatype tag_on_failure }` — réutilise `filters.Dissector`.
+
+        Comme le filtre officiel (#117) : un champ source absent, vide ou non
+        texte, ou un patron qui ne s'applique pas, ajoute `tag_on_failure`
+        (défaut `_dissectfailure`) et coupe `convert_datatype` et les options
+        communes. Sinon `convert_datatype` (`int`, `float`) convertit les
+        champs indiqués.
 
         Returns:
-            True si au moins un patron a été découpé (options communes, #116).
+            True sans échec et avec au moins `mapping` ou `convert_datatype`
+            (options communes, #116).
         """
-        reussi = False
         mapping = options.get("mapping")
-        if not isinstance(mapping, dict):
-            return False
+        conversions = options.get("convert_datatype")
+        mapping = mapping if isinstance(mapping, dict) else {}
+        conversions = conversions if isinstance(conversions, dict) else {}
+        echec = False
         for source_field, pattern in mapping.items():
-            value = doc.get(source_field)
-            if not isinstance(value, str) or not isinstance(pattern, str):
-                continue
-            dissector = self._dissect_cache.get(pattern)
+            dissector = self._dissector(pattern)
             if dissector is None:
-                try:
-                    dissector = Dissector(pattern)
-                except ValueError:
-                    logger.debug("patron dissect invalide, ignoré : {}", pattern)
-                    continue
-                self._dissect_cache[pattern] = dissector
-            extracted = dissector.apply(value)
-            if extracted is not None:
-                doc.update(extracted)
-                reussi = True
-        return reussi
+                continue
+            value = resolve_field(doc, parse_field_path(source_field))
+            extracted = dissector.apply(value) if isinstance(value, str) and value else None
+            if extracted is None:
+                logger.warning(_("dissect : échec sur le champ {}"), source_field)
+                echec = True
+                continue
+            for champ, texte in extracted.items():
+                assign_field(doc, parse_field_path(champ), texte)
+        if echec:
+            add_failure_tags(doc, options.get("tag_on_failure", ["_dissectfailure"]))
+            return False
+        for champ, type_cible in conversions.items():
+            _convertir_dissect(doc, champ, type_cible)
+        return bool(mapping or conversions)
+
+    @traced
+    def _dissector(self, pattern: Any) -> Dissector | None:
+        """Compile (avec cache) un patron dissect ; None si le patron est invalide."""
+        if not isinstance(pattern, str):
+            return None
+        dissector = self._dissect_cache.get(pattern)
+        if dissector is None:
+            try:
+                dissector = Dissector(pattern)
+            except ValueError:
+                logger.debug("patron dissect invalide, ignoré : {}", pattern)
+                return None
+            self._dissect_cache[pattern] = dissector
+        return dissector
 
     @traced
     def _apply_kv(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
@@ -735,49 +795,39 @@ class PipelineInterpreter:
     def _apply_translate(
         self, doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None, on_missing: str
     ) -> bool:
-        """`translate { dictionary_path => ... source => ... target => ... fallback => ... }`.
+        """`translate { source => ... [target => ...] [dictionary(_path) => ...] ... }` (#119).
 
-        Résout `source` (chemin `%{[a][b]}`, via `templates.resolve_field`),
-        cherche la valeur dans le dictionnaire YAML de `dictionary_path`
-        (chargé une seule fois, mis en cache par chemin — voir
-        `enrichment.TranslateDictionary`) et l'écrit à `target`. Si la clé
-        est absente (ou non hachable) ET qu'un `fallback` est fourni, ce
-        `fallback` est rendu comme un gabarit sprintf (`templates.
-        render_template`) avant d'être écrit à `target` — c'est le
-        comportement réel du plugin (le pipeline de production de
-        Mathilde l'utilise avec `fallback => "index: %{[ifTable][index]}"`,
-        voir `pipeline.example.d/`). Sans `fallback` et sans
-        correspondance, `target` n'est pas touché (comme un `mutate` sans
-        correspondance). `refresh_behaviour` (ex. "replace") est normalisé
-        dans `options` mais jamais honoré — voir "Limites assumées" dans
-        la docstring du module.
+        Délègue à `filters.TranslateFilter` (même code que le step
+        `translate` de `--filters`), construit au premier document concerné
+        et mis en cache par jeu d'options. Les dictionnaires fichiers sont
+        partagés par chemin (`_translate_dictionaries`, chargés une seule
+        fois). Options incohérentes ou fichier illisible : bloc ignoré,
+        tracé, sans nouvel essai.
+
+        Returns:
+            True si les options communes (#116) doivent suivre.
         """
-        dictionary_path = options.get("dictionary_path")
-        source = options.get("source")
-        target = options.get("target")
-        if not (isinstance(dictionary_path, str) and isinstance(source, str) and isinstance(target, str)):
-            logger.debug("plugin translate mal formé (dictionary_path/source/target requis), ignoré")
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._translate_filters:
+            try:
+                filtre: TranslateFilter | None = TranslateFilter(options, dictionary_factory=self._translate_dictionary)
+            except ValueError as exc:
+                logger.debug("plugin translate ignoré : {}", exc)
+                filtre = None
+            self._translate_filters[cle] = filtre
+        filtre = self._translate_filters[cle]
+        if filtre is None:
             return False
+        return filtre.apply(doc, now=now, on_missing=on_missing)
+
+    @traced
+    def _translate_dictionary(self, dictionary_path: str) -> TranslateDictionary:
+        """Dictionnaire `translate` du chemin, chargé une seule fois (`_translate_dictionary_factory`)."""
         dictionary = self._translate_dictionaries.get(dictionary_path)
         if dictionary is None:
-            try:
-                dictionary = self._translate_dictionary_factory(dictionary_path)
-            except (OSError, yaml.YAMLError) as exc:
-                logger.debug("dictionnaire translate illisible, ignoré : {} ({})", dictionary_path, exc)
-                return False
+            dictionary = self._translate_dictionary_factory(dictionary_path)
             self._translate_dictionaries[dictionary_path] = dictionary
-        key = resolve_field(doc, parse_field_path(source))
-        value = dictionary.lookup(key) if key is not _MISSING else None
-        if value is None:
-            fallback = options.get("fallback")
-            if fallback is None:
-                return False
-            if isinstance(fallback, str):
-                value = render_template(fallback, doc, now=now, on_missing=on_missing)
-            else:
-                value = fallback
-        assign_field(doc, parse_field_path(target), value)
-        return True
+        return dictionary
 
     @traced
     def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
