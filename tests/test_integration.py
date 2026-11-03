@@ -32,6 +32,7 @@ from typing import Any
 
 import httpx
 import pytest
+from loguru import logger
 
 from indexer import OpenSearchIndexer, SendOutcome
 from omprog import ACK_OK, ACK_RETRY, build_bridge, build_parser, health_check_loop
@@ -413,6 +414,27 @@ class TestPipelineConf:
         assert index == "logs-test-app1"
         assert body["src"] == "app1"
 
+    def test_clone_deux_evenements_indexes(self, tmp_path: Path) -> None:
+        """#141 : un `clone` produit l'original ET la copie, tous deux indexés.
+
+        Le second événement réussit alors que le premier aussi : le résultat
+        conservé reste la première réussite (branche de garde de `handle_doc`).
+        """
+        conf = """
+        filter {
+            clone { clones => ["copie"] }
+        }
+        """
+        bridge, fake = make_bridge(tmp_path, pipeline_conf=conf)
+
+        async def scenario() -> str:
+            reply = await bridge.handle_line(json.dumps({"message": "x"}))
+            await bridge.close()
+            return reply
+
+        assert asyncio.run(scenario()) == ACK_OK
+        assert len(fake.calls) == 2
+
 
 class TestDebitMinimal:
     def test_200_messages_sous_la_seconde(self, tmp_path: Path) -> None:
@@ -457,6 +479,76 @@ class TestNoeudMort:
             )
             try:
                 return await indexer.send({"a": 1})
+            finally:
+                await indexer.close()
+
+        assert asyncio.run(scenario()) is SendOutcome.RETRYABLE
+
+
+class TestOptionsIndexer:
+    """Options du connecteur traduites en options de sortie (#160), parité vérifiée."""
+
+    @staticmethod
+    def _indexer(auth: tuple[str, str] | None = None, **kwargs: Any) -> OpenSearchIndexer:
+        return OpenSearchIndexer(
+            hosts=[{"host": "127.0.0.1", "port": 9200}],
+            auth=auth,
+            index_pattern="switch-logs-%Y.%m.%d",
+            use_ssl=False,
+            verify_certs=False,
+            **kwargs,
+        )
+
+    def test_plusieurs_noeuds_avertit(self) -> None:
+        """La sortie n'utilise que le premier nœud : l'avertissement part au démarrage."""
+        messages: list[str] = []
+        sink = logger.add(lambda m: messages.append(m.record["message"]), level="WARNING")
+        try:
+            indexer = OpenSearchIndexer(
+                hosts=[{"host": "127.0.0.1", "port": 9200}, {"host": "127.0.0.1", "port": 9201}],
+                auth=None,
+                index_pattern="switch-logs-%Y.%m.%d",
+                use_ssl=False,
+                verify_certs=False,
+            )
+            asyncio.run(indexer.close())
+        finally:
+            logger.remove(sink)
+        assert any("seul le premier est utilisé" in message for message in messages)
+
+    def test_auth_transmis_a_la_sortie(self) -> None:
+        """`auth` du connecteur devient `user`/`password` de la sortie."""
+
+        async def scenario() -> dict[str, Any]:
+            indexer = self._indexer(auth=("u", "p"))
+            try:
+                return dict(indexer.sortie.options)
+            finally:
+                await indexer.close()
+
+        options = asyncio.run(scenario())
+        assert (options["user"], options["password"]) == ("u", "p")
+
+    def test_client_partage_avec_la_sortie(self) -> None:
+        """La couture `_client()` d'omprog renvoie LE client httpx de la sortie."""
+
+        async def scenario() -> bool:
+            indexer = self._indexer()
+            try:
+                client = await indexer._client()
+                return client is indexer.sortie._client_http()
+            finally:
+                await indexer.close()
+
+        assert asyncio.run(scenario())
+
+    def test_action_invalide_sans_dlq_renvoie_retryable(self) -> None:
+        """Comportement historique sans DLQ : l'échec permanent reste RETRYABLE."""
+
+        async def scenario() -> SendOutcome:
+            indexer = self._indexer()
+            try:
+                return await indexer.send({"v": 1}, action="upsert")
             finally:
                 await indexer.close()
 
