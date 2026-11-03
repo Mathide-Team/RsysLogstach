@@ -42,6 +42,13 @@ OPENSEARCH_TIMEOUT = 3.0  # secondes, timeout socket du client OpenSearch
 # transitoire, comportement inchangé.
 _PERMANENT_ERRORS = (RequestError, NotFoundError)
 
+# Issue #126 : actions `bulk` du plugin de sortie Logstash.
+ACTIONS = ("index", "create", "update", "delete")
+
+
+class ActionInvalideError(ValueError):
+    """Action inconnue, ou `update`/`delete` sans `_id` : échec permanent (#126)."""
+
 
 class SendOutcome(enum.Enum):
     """Résultat d'`OpenSearchIndexer.send`, distingue trois issues (session 13).
@@ -214,7 +221,58 @@ class OpenSearchIndexer:
         return rendered or None
 
     @traced
-    async def send(self, doc: dict, *, index: str | None = None, document_id: str | None = None) -> SendOutcome:
+    async def _executer(
+        self,
+        action: str,
+        index: str,
+        doc: dict,
+        document_id: str | None,
+        params: dict[str, str],
+        *,
+        doc_as_upsert: bool,
+    ) -> None:
+        """Appelle l'API OpenSearch qui correspond à `action` (#126).
+
+        `index` et `create` passent par l'API index (`op_type=create` pour
+        `create`) et acceptent `pipeline` et `routing` ; `update` et
+        `delete` exigent un `_id` et n'acceptent que `routing`, comme les
+        API `_update` et `_doc` DELETE.
+
+        Raises:
+            ActionInvalideError: Action inconnue, ou `_id` manquant.
+        """
+        if action not in ACTIONS:
+            raise ActionInvalideError(f"action inconnue : {action!r}")
+        if action in ("index", "create"):
+            if action == "create":
+                params = {**params, "op_type": "create"}
+            await self._client.index(index=index, body=doc, id=document_id, **params)
+            return
+        if not document_id:
+            raise ActionInvalideError(f"l'action {action} exige document_id")
+        routage = {k: v for k, v in params.items() if k == "routing"}
+        if len(routage) != len(params):
+            logger.debug("_executer: pipeline ignoré pour l'action {}", action)
+        if action == "update":
+            corps: dict[str, Any] = {"doc": doc}
+            if doc_as_upsert:
+                corps["doc_as_upsert"] = True
+            await self._client.update(index=index, id=document_id, body=corps, **routage)
+        else:
+            await self._client.delete(index=index, id=document_id, **routage)
+
+    @traced
+    async def send(
+        self,
+        doc: dict,
+        *,
+        index: str | None = None,
+        document_id: str | None = None,
+        action: str = "index",
+        pipeline: str | None = None,
+        routing: str | None = None,
+        doc_as_upsert: bool = False,
+    ) -> SendOutcome:
         """Indexe un document dans OpenSearch.
 
         Args:
@@ -232,6 +290,12 @@ class OpenSearchIndexer:
                 aléatoire), même convention que `_document_id` pour un
                 gabarit qui rend une chaîne vide.
 
+            action: `index` (défaut), `create`, `update` ou `delete` (#126),
+                comme l'option `action` du plugin de sortie Logstash.
+            pipeline: Pipeline d'ingestion OpenSearch (`index`, `create`).
+            routing: Valeur de routage (`_routing`).
+            doc_as_upsert: Pour `update` : crée le document s'il manque.
+
         Returns:
             `SendOutcome` (session 13, voir sa docstring) : `INDEXED` si
             l'indexation a réussi, `DEAD_LETTERED` si l'échec est permanent
@@ -241,10 +305,11 @@ class OpenSearchIndexer:
         """
         resolved_index = index or self._current_index()
         resolved_id = document_id or self._document_id(doc)
+        params = {k: v for k, v in (("pipeline", pipeline), ("routing", routing)) if v}
         try:
-            await self._client.index(index=resolved_index, body=doc, id=resolved_id)
+            await self._executer(action, resolved_index, doc, resolved_id, params, doc_as_upsert=doc_as_upsert)
             return SendOutcome.INDEXED
-        except _PERMANENT_ERRORS as exc:
+        except (*_PERMANENT_ERRORS, ActionInvalideError) as exc:
             logger.warning(_("Indexation OpenSearch échouée définitivement erreur={error}"), error=exc)
             if self._dlq is not None:
                 await self._dlq.write(doc, index=resolved_index, error=str(exc))

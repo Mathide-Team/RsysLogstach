@@ -58,6 +58,7 @@ from indexer import OpenSearchIndexer, SendOutcome
 from interpreter import PipelineInterpreter
 from metrics import Metrics
 from opensearchconf import apply_connection_options, collect_connection_options, conf_auth
+from templates import ESCAPE_STYLES, set_escape_style
 from tracing import traced
 from util import load_json_file, opensearch_auth_from_env
 
@@ -105,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="keep",
         # xgettext:no-python-brace-format (« %%{champ} » : syntaxe des gabarits, pas un champ de format)
         help=_("Rendu d'un %%{champ} absent dans le pipeline (défaut : keep)"),
+    )
+    parser.add_argument(
+        "--field-reference-escape-style",
+        choices=ESCAPE_STYLES,
+        default="none",
+        help=_("Crochets échappés dans les noms de champs, comme field_reference.escape_style (défaut : none)"),
     )
 
     g = parser.add_argument_group(_("enrichissement"))
@@ -313,11 +320,7 @@ class Bridge:
             if action.plugin not in _INDEX_PLUGINS:
                 logger.debug("Sortie {plugin} non gérée par omprog, ignorée", plugin=action.plugin)
                 continue
-            result = await self._send(
-                doc,
-                index=_option_str(action.options.get("index")),
-                document_id=_option_str(action.options.get("document_id")),
-            )
+            result = await self._send(doc, **_options_envoi(action.options))
             # Un seul échec transitoire suffit pour que rsyslog renvoie le message.
             if result is SendOutcome.RETRYABLE or outcome is None:
                 outcome = result
@@ -350,6 +353,26 @@ class Bridge:
             if close is not None:
                 close()
         await self.indexer.close()
+
+
+@traced
+def _options_envoi(options: dict[str, Any]) -> dict[str, Any]:
+    """Options d'une sortie opensearch rendues → arguments d'`indexer.send`.
+
+    `action`, `pipeline` et `routing` (#126) ne sont passés que s'ils sont
+    renseignés, `doc_as_upsert` que s'il est vrai.
+    """
+    envoi: dict[str, Any] = {
+        "index": _option_str(options.get("index")),
+        "document_id": _option_str(options.get("document_id")),
+    }
+    for cle in ("action", "pipeline", "routing"):
+        valeur = _option_str(options.get(cle))
+        if valeur is not None:
+            envoi[cle] = valeur
+    if options.get("doc_as_upsert") is True:
+        envoi["doc_as_upsert"] = True
+    return envoi
 
 
 @traced
@@ -391,6 +414,7 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
         enrichers.append(DictEnricher(load_json_file(args.enrich_dict), args.enrich_key_field, args.enrich_out_field))
     if args.geoip_db:
         enrichers.append(GeoIPEnricher(args.geoip_db, args.geoip_ip_field, args.geoip_out_field))
+    set_escape_style(args.field_reference_escape_style)  # #124, avant toute lecture de gabarit
     interpreter = PipelineInterpreter(read_pipeline_source(args.pipeline_conf)) if args.pipeline_conf else None
 
     fingerprint_fields: list[str] | None = None
