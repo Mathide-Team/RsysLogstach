@@ -8,15 +8,21 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
   déjà livré dans main, vérification d’ascendance et archives du tag exact.
 
 
+### Corrigé
+- **Gabarits** (#102) : `%{+%s}` rend les secondes depuis l'epoch de `@timestamp`, comme Logstash, au lieu de `%0`.
+
 ### Modifié
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- **Audit des fonctions Logstash** (#101) : `docs/audit-fonctions-logstash.md`, tableau fonction / fait ou pas fait / commentaires (gabarits sprintf, conditions, plugins `filter{}` et `output{}`, options communes).
+- **Authentification par certificat client (mTLS)** (#100) : `--cacert`, `--tls-certificate`, `--tls-key`, mêmes noms que le plugin logstash-output-opensearch, transmis au client opensearch-py. Refus au démarrage si certificat et clé ne vont pas ensemble, si les nœuds sont en `http://` ou si un fichier manque. Test de bout en bout contre un serveur HTTPS local qui exige un certificat client.
 - **Métriques Prometheus** (#35) : module `metrics.py` (prometheus-client 0.26.0, registre propre au pont), endpoint `/metrics` activé par `--metrics-port` (désactivé par défaut, écoute sur 127.0.0.1). Compteurs reçus/issues/erreurs, histogrammes de latence d'indexation et de taille, jauges de taille de DLQ et de renvois en attente.
 - **Internationalisation** (#38) : journaux `info` et au-dessus et aide de la ligne de commande traduisibles (gettext, domaine `rsyslogstach`, langue choisie par l'environnement), 29 langues listées dans `lang/LINGUAS` (traduction anglaise complète, les autres à faire), `scripts/i18n-update.sh` (mise à jour, `--check`, `--compile`), `scripts/i18n_report.py`, job CI « i18n », workflow `i18n.yml` (PR de mise à jour des catalogues) ; les `.mo` sont installés par la roue dans `share/locale`.
 - Règles de protection versionnées `.github/branch-protection/{main,dev}.json` (relevées sur la protection réelle du 22/10/2026), vérifiées par le workflow `branch-protection.yml` (push sur main/dev, chaque jour) et `scripts/check_branch_protection.py` (socle Mathilde-Team/.github#1, #83).
 - **`drop {}` natif** dans un pipeline `.conf` (#34) : `if [x] == "bruit" { drop { } }` écarte le document (`apply()` renvoie `None`, comme un step `"drop"` de `filters_json`) ; option `percentage` honorée comme dans Logstash.
 - **Step `"date"` dans `--filters`** (#34) : `match`, `target`, `timezone`, `tag_on_failure`, comme le plugin `date` des `.conf`. Les deux mécanismes partagent désormais `filters.DateFilter` (logique déplacée d'`interpreter.py`). Un `match` mal formé est refusé dès le chargement de `--filters` (`ValueError`), et reste ignoré dans un `.conf`.
+- **`Makefile`** (#103, fin de #73) : cibles usuelles (`test`, `lint`, `fmt`, `fmt-fix`, `i18n`, `seuil`) exécutant les mêmes commandes que la CI ; le seuil de couverture y est lu depuis `pyproject.toml` (`tomllib`), jamais recopié — une seule source de vérité. Section Tests du README mise à jour.
 
 ## [0.9.0] - 2026-10-22
 

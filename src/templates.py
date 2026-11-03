@@ -23,6 +23,7 @@ au sens sprintf, et n'est délibérément pas traitée ici) :
                              numérique)
     %{+FORMAT}               date basée sur @timestamp, ancienne syntaxe
                              (ex. %{+YYYY.MM.dd})
+    %{+%s}                   secondes depuis l'epoch de @timestamp
     %{{FORMAT}}               date basée sur @timestamp, syntaxe Java Time
                              recommandée (ex. %{{yyyy.MM.dd}})
     %{{TIME_NOW}}             heure du traitement (pas @timestamp)
@@ -137,7 +138,12 @@ def render(
         elif token.kind == "field":
             parts.append(_render_field(token.value, event, on_missing))
         elif token.kind == "olddate":
-            parts.append(_format_timestamp(token.value, _event_timestamp(event, moment)))
+            if token.value == "%s":
+                # `%{+%s}` : secondes depuis l'epoch, cas à part de Logstash
+                # (StringInterpolation.java), pas un motif Joda (issue #102).
+                parts.append(str(int(_event_timestamp(event, moment).timestamp())))
+            else:
+                parts.append(_format_timestamp(token.value, _event_timestamp(event, moment)))
         else:  # "newdate" : seul type restant produit par _tokenize
             if token.value == "TIME_NOW":
                 parts.append(_format_timestamp("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", moment))

@@ -128,6 +128,42 @@ def test_indexeur_recoit_les_options(monkeypatch):
     assert kw["index_pattern"] == omprog.DEFAULT_INDEX_PATTERN
 
 
+def test_options_mtls_transmises(tmp_path):
+    """--cacert / --tls-certificate / --tls-key arrivent à l'indexeur (issue #100)."""
+    fichiers = {nom: tmp_path / f"{nom}.pem" for nom in ("ca", "client", "cle")}
+    for chemin in fichiers.values():
+        chemin.write_text("PEM", encoding="utf-8")
+    kw = _bridge(
+        "--cacert", str(fichiers["ca"]), "--tls-certificate", str(fichiers["client"]), "--tls-key", str(fichiers["cle"])
+    ).indexer.kwargs
+    assert (kw["ca_certs"], kw["client_cert"], kw["client_key"]) == tuple(str(f) for f in fichiers.values())
+
+
+def test_sans_options_mtls_rien_transmis():
+    kw = _bridge().indexer.kwargs
+    assert (kw["ca_certs"], kw["client_cert"], kw["client_key"]) == (None, None, None)
+
+
+@pytest.mark.parametrize("option", ["--tls-certificate", "--tls-key"])
+def test_certificat_et_cle_vont_ensemble(tmp_path, option):
+    pem = tmp_path / "x.pem"
+    pem.write_text("PEM", encoding="utf-8")
+    with pytest.raises(ValueError, match="vont ensemble"):
+        _bridge(option, str(pem))
+
+
+def test_options_tls_refusees_en_http(tmp_path):
+    pem = tmp_path / "ca.pem"
+    pem.write_text("PEM", encoding="utf-8")
+    with pytest.raises(ValueError, match="https:// requis"):
+        _bridge("--opensearch-host", "http://os1:9200", "--cacert", str(pem))
+
+
+def test_fichier_tls_introuvable(tmp_path):
+    with pytest.raises(ValueError, match="introuvable"):
+        _bridge("--cacert", str(tmp_path / "absent.pem"))
+
+
 def test_empreinte_du_document_entier():
     assert _bridge("--document-id-fingerprint", "*").indexer.kwargs["document_id_fingerprint_fields"] == []
 

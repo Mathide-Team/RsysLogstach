@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-10-25 07:57+0000\n"
+"POT-Creation-Date: 2026-11-03 11:23+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -18,17 +18,14 @@ msgstr ""
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: src/filters.py
-#, python-brace-format
 msgid "base geoip illisible : {} ({})"
 msgstr "unreadable geoip database: {} ({})"
 
 #: src/filters.py
-#, python-brace-format
 msgid "dictionnaire translate illisible : {} ({})"
 msgstr "unreadable translate dictionary: {} ({})"
 
 #: src/filters.py
-#, python-brace-format
 msgid "exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"
 msgstr "exception while applying the mutate filter, remaining operations skipped: {}"
 
@@ -61,6 +58,10 @@ msgid "Arrêt du pont messages={count}"
 msgstr "Bridge stopped messages={count}"
 
 #: src/omprog.py
+msgid "Autorité de certification du cluster (option cacert de Logstash)"
+msgstr "Certificate authority of the cluster (Logstash cacert option)"
+
+#: src/omprog.py
 msgid "Base MaxMind GeoIP2 City (.mmdb)"
 msgstr "MaxMind GeoIP2 City database (.mmdb)"
 
@@ -75,6 +76,10 @@ msgstr "PATH"
 #: src/omprog.py
 msgid "CLÉ"
 msgstr "KEY"
+
+#: src/omprog.py
+msgid "Certificat client présenté au cluster, mTLS (option tls_certificate de Logstash)"
+msgstr "Client certificate presented to the cluster, mTLS (Logstash tls_certificate option)"
 
 #: src/omprog.py
 msgid "Champ clé du dictionnaire (défaut : hostname)"
@@ -95,6 +100,10 @@ msgstr "Output field (default: geoip)"
 #: src/omprog.py
 msgid "Chaîne de filtres (format filters.example.json)"
 msgstr "Filter chain (filters.example.json format)"
+
+#: src/omprog.py
+msgid "Clé privée non chiffrée du certificat client (option tls_key de Logstash)"
+msgstr "Unencrypted private key of the client certificate (Logstash tls_key option)"
 
 #: src/omprog.py
 msgid "Dictionnaire statique (format enrich-dict.example.json)"
