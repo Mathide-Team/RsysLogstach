@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:07+0000\n"
+"POT-Creation-Date: 2026-11-03 12:13+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -42,6 +42,18 @@ msgstr "OpenSearch indexing failed error={error}"
 #: src/interpreter.py
 msgid "fingerprint ignoré : {}"
 msgstr "fingerprint ignored: {}"
+
+#: src/interpreter.py
+msgid "json : analyse impossible du champ {} : {}"
+msgstr "json: cannot parse field {}: {}"
+
+#: src/interpreter.py
+msgid "json : un JSON non objet exige l'option target"
+msgstr "json: a non-object JSON requires the target option"
+
+#: src/interpreter.py
+msgid "json ignoré : option source manquante"
+msgstr "json ignored: missing source option"
 
 #: src/metrics.py
 #, python-brace-format

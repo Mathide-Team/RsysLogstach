@@ -125,6 +125,8 @@ filter {
   toujours vrai ; `timeout_millis` non appliqué. Un motif invalide ou
   inconnu est ignoré (journal DEBUG), les autres motifs restent actifs.
 
+Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
+
 ### Index OpenSearch
 
 Template : `opensearch-index-template.json` (index pattern `switch-logs-*`).

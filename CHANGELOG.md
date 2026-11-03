@@ -16,6 +16,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- Filtre `json { … }` natif dans `--pipeline-conf` (#115) : `source`, `target`,
+  `skip_on_invalid_json`, `tag_on_failure`.
 - Filtre `fingerprint { … }` natif dans `--pipeline-conf` (#114) : méthodes
   SHA1/SHA256/SHA384/SHA512/MD5, HMAC, MURMUR3, UUID, IPV4_NETWORK,
   `base64encode`, `concatenate_sources`, `concatenate_all_fields`.
