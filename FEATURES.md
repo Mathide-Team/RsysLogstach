@@ -26,7 +26,7 @@
 - Parsing des fichiers `.conf` via `logstash-pipeline-parser`
 - Exemples : `pipeline.example.d/10_input`, `25_filter`, `30_output`
 - tag_on_failure pour date et geoip (sessions 19, 22, 24)
-- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent` (#121), plus le pont `filters_json`
+- Filtres natifs interprétés : `dissect`, `mutate`, `translate` (toutes les options du plugin, #119), `mmdb`, `geoip`, `date`, `drop` (avec `percentage`, #34), `kv` (#113), `fingerprint` (#114), `grok` (#112), `useragent`, `xml` et `dns` (#121), plus le pont `filters_json`
 
 ### Indexation OpenSearch (module indexer.py)
 - `OpenSearchIndexer` — indexation asynchrone (opensearch-py[async])
@@ -71,7 +71,8 @@
 - Voir issue #28
 
 ### Templates (templates.py)
-- Fraction de seconde `S…` : précision milliseconde ; au-delà de 3 lettres, complétée par des zéros (`SSSSSS` → `123000`), alors que Java Time afficherait les microsecondes
+- Fraction de seconde `S…` : précision microseconde ; au-delà de 6 lettres, complétée par des zéros (`SSSSSSSSS` → `123456000`) (#123)
+- Lettres de date (#123) : Java Time dans `%{{…}}` (`G u y Y Q q M L w W D d E e c a h K k H m s S n N A V O X x Z z`) et Joda dans `%{+…}` (`G C Y x y w e E M D d a h K k H m s S Z z`) ; semaines ISO (lundi, semaine 1 d'au moins 4 jours) et textes en anglais, alors que Java Time suit la locale de la JVM ; `F` et `B` recopiées telles quelles
 - Rendu des valeurs aligné sur Logstash 8 (`StringInterpolation`, issue #49) : booléen `true`/`false`, liste jointe par `,`, objet en JSON compact
 - **Changement de comportement (#49)** : un `document_id`, un nom d'index ou une empreinte construit à partir d'un booléen (`True` → `true`), d'une liste (`['a', 'b']` → `a,b`) ou d'un objet (repr Python → JSON) change de valeur — à signaler dans les notes de version (doublons possibles dans OpenSearch pour les documents déjà indexés avec l'ancien rendu)
 - Références mal formées refusées (`ValueError`) comme par Logstash : `a[b]`, `a]`, `[]`, `[a[b]]`
@@ -79,7 +80,7 @@
 - Rendu d'un champ `null` : chaîne vide — écart assumé avec Logstash 8, qui conserve le gabarit `%{champ}` littéral. **Fingerprint (#29, décision Mathilde)** : un champ `null` est distingué d'un champ absent — il compte comme présent (empreinte du contenu vide), `None` uniquement si tous les champs demandés sont absents
 
 ### Pipeline `.conf` (interpreter.py)
-- Plugins natifs non interprétés (structure seule, signalée en debug) : `dns`, `json`… Leur équivalent passe par `filters_json` quand il existe
+- Plugins natifs non interprétés (structure seule, signalée en debug) : `aggregate`, `ruby`… Leur équivalent passe par `filters_json` quand il existe
 - Décision #34, revue par #112 (`grok` natif livré) : à l'époque, `grok` n'était pas implémenté. Un step `regex` à groupes nommés (`(?P<champ>...)`) fait le même travail sans embarquer la bibliothèque de motifs grok. `dissect` (natif et JSON) et `translate` (natif et JSON) étaient déjà couverts. `date` est désormais disponible des deux côtés
 - Comme Logstash, un tableau à un seul élément dans une condition (`[level] in ["ERROR"]`) est une **référence de champ**, pas un tableau : écrire `[level] == "ERROR"` ou au moins deux éléments
 - `mutate convert` : une chaîne non numérique (« abc ») laisse le champ inchangé (Logstash/Ruby donnerait 0)

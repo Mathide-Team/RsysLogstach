@@ -255,6 +255,7 @@ from logstash_pipeline_parser import Pipeline
 from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
+from dnslookup import DnsFilter
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import (
     DateFilter,
@@ -268,12 +269,14 @@ from filters import (
 from fingerprint import FingerprintFilter
 from grok import GrokFilter
 from i18n import _
+from multievents import CloneFilter, SplitFilter
 from simples import PLUGINS as PLUGINS_SIMPLES
 from simples import appliquer_cidr, reseaux_cidr
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from useragent import UserAgentFilter
 from util import add_failure_tags, load_json_file
+from xmlfilter import XmlFilter
 
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
 _REGEX_OPS = {"=~", "!~"}
@@ -402,6 +405,13 @@ class PipelineInterpreter:
         self._translate_filters: dict[str, TranslateFilter | None] = {}
         # #121 : un UserAgentFilter par jeu d'options (None : bloc ignoré).
         self._useragent_filters: dict[str, UserAgentFilter | None] = {}
+        # #121 : un XmlFilter par jeu d'options (None : bloc ignoré).
+        self._xml_filters: dict[str, XmlFilter | None] = {}
+        # #121 : un DnsFilter par jeu d'options (None : bloc ignoré) ; ses
+        # caches durent donc autant que l'interpréteur, comme dans Logstash.
+        self._dns_filters: dict[str, DnsFilter | None] = {}
+        self._clone_filters: dict[str, CloneFilter | None] = {}
+        self._split_filters: dict[str, SplitFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -421,6 +431,22 @@ class PipelineInterpreter:
         self._translate_dictionary_factory: Any = TranslateDictionary
         self._mmdb_lookup_factory: Any = GenericMmdbLookup
         self._geoip_lookup_factory: Any = GeoIPLookup
+
+    @property
+    def output_plugins(self) -> list[tuple[str, dict[str, Any]]]:
+        """Plugins de tous les blocs `output{}`, branches comprises, avec leurs options brutes (#125).
+
+        Options normalisées mais non rendues (pas de gabarit sprintf, pas de
+        document) : sert à lire la configuration statique d'une sortie, par
+        exemple la connexion `hosts`/`user`/`ssl` d'un `opensearch{}`.
+        """
+        logger.debug("output_plugins | {} section(s)", len(self._ast))
+        plugins: list[tuple[str, dict[str, Any]]] = []
+        for section in self._ast:
+            if section[0] == "output":
+                plugins.extend(_output_plugins(section[1]))
+        logger.debug("output_plugins | {} plugin(s)", len(plugins))
+        return plugins
 
     @property
     def has_output(self) -> bool:
@@ -495,46 +521,117 @@ class PipelineInterpreter:
             qu'aucune branche n'a matché, ou s'il n'a pas de section
             `output{}` du tout (voir `has_output` pour les distinguer).
             Les sections `input{}` sont ignorées (voir la docstring du
-            module, "Limites assumées").
+            module, "Limites assumées"). Ne concerne que `doc` : `None`
+            aussi si un `split` l'a remplacé, et les événements créés par
+            `clone` / `split` ne sont pas rendus — voir `apply_events`
+            (#141), qu'utilise omprog.
         """
-        actions: list[OutputAction] = []
-        try:
+        for event, actions in self.apply_events(doc, now=now, on_missing=on_missing):
+            if event is doc:
+                logger.debug("apply | {} action(s)", len(actions))
+                return actions
+        logger.debug("apply | document d'origine écarté (drop ou split)")
+        return None
+
+    @traced
+    def apply_events(
+        self,
+        doc: dict[str, Any],
+        *,
+        now: datetime | None = None,
+        on_missing: str = "keep",
+    ) -> list[tuple[dict[str, Any], list[OutputAction]]]:
+        """Applique le pipeline et renvoie chaque événement produit avec ses actions de sortie (#141).
+
+        `doc` est modifié en place et reste en tête de liste s'il n'a pas
+        été écarté (`drop`) ni remplacé (`split`). Les événements créés par
+        `clone` ou `split` poursuivent le pipeline à partir du filtre
+        suivant, dans la même branche, comme Logstash ; un `drop` n'écarte
+        que l'événement qu'il atteint. Comme Logstash, toutes les sections
+        `filter{}` passent avant les sections `output{}`.
+
+        Returns:
+            Liste (événement, actions de sortie rendues pour lui), dans
+            l'ordre de production ; `[]` si tout a été écarté. Les actions
+            sont `[]` si aucune sortie n'est atteinte (voir `has_output`).
+        """
+        events = [doc]
+        for section in self._ast:
+            if section[0] == "filter":
+                events = [
+                    produced
+                    for event in events
+                    for produced in self._run_filter_body(section[1], event, now=now, on_missing=on_missing)
+                ]
+            # "input" : voir la docstring du module, "Limites assumées" — rien à appliquer.
+        results: list[tuple[dict[str, Any], list[OutputAction]]] = []
+        for event in events:
+            actions: list[OutputAction] = []
             for section in self._ast:
-                section_type, body = section[0], section[1]
-                if section_type == "filter":
-                    self._run_filter_body(body, doc, now=now, on_missing=on_missing)
-                elif section_type == "output":
-                    actions.extend(self._run_output_body(body, doc, now=now, on_missing=on_missing))
-                # "input" : voir la docstring du module, "Limites assumées" — rien à appliquer.
-        except _DocumentDropped as exc:
-            logger.debug("document écarté par un filtre : {}", exc)
-            return None
-        return actions
+                if section[0] == "output":
+                    actions.extend(self._run_output_body(section[1], event, now=now, on_missing=on_missing))
+            results.append((event, actions))
+        logger.debug("apply_events | {} événement(s)", len(results))
+        return results
 
     # ------------------------------------------------------------------
     # filter{}
     # ------------------------------------------------------------------
 
     @traced
-    def _run_filter_body(self, body: list, doc: dict[str, Any], *, now: datetime | None, on_missing: str) -> None:
-        """Exécute séquentiellement les entrées d'un corps `filter{}` (ou d'une branche)."""
+    def _run_filter_body(
+        self, body: list, doc: dict[str, Any], *, now: datetime | None, on_missing: str
+    ) -> list[dict[str, Any]]:
+        """Exécute séquentiellement les entrées d'un corps `filter{}` (ou d'une branche).
+
+        Returns:
+            Les événements qui sortent du corps : `[doc]` en général, plus
+            les copies de `clone`, les morceaux de `split` à la place de
+            `doc`, ou `[]` après un `drop` (#141).
+        """
+        events = [doc]
         i = 0
         while i < len(body):
             entry = body[i]
+            produced: list[dict[str, Any]] = []
             if entry[0] == "if":
-                i, matched = self._branch_chain(body, i, doc)
-                if matched is not None:
-                    self._run_filter_body(matched, doc, now=now, on_missing=on_missing)
+                end = i
+                for event in events:
+                    end, matched = self._branch_chain(body, i, event)
+                    if matched is None:
+                        produced.append(event)
+                    else:
+                        produced.extend(self._run_filter_body(matched, event, now=now, on_missing=on_missing))
+                i = end if events else _skip_chain_tail(body, i + 1)
             else:
-                self._run_filter_plugin(entry, doc, now=now, on_missing=on_missing)
+                for event in events:
+                    try:
+                        produced.extend(self._run_filter_plugin(entry, event, now=now, on_missing=on_missing))
+                    except _DocumentDropped as exc:
+                        logger.debug("événement écarté par un filtre : {}", exc)
                 i += 1
+            events = produced
+        logger.debug("_run_filter_body | {} événement(s)", len(events))
+        return events
 
     @traced
-    def _run_filter_plugin(self, entry: list, doc: dict[str, Any], *, now: datetime | None, on_missing: str) -> None:
-        """Dispatche un plugin `filter{}` vers son comportement (ou l'ignore, tracé)."""
+    def _run_filter_plugin(
+        self, entry: list, doc: dict[str, Any], *, now: datetime | None, on_missing: str
+    ) -> list[dict[str, Any]]:
+        """Dispatche un plugin `filter{}` vers son comportement (ou l'ignore, tracé).
+
+        Returns:
+            Les événements qui en sortent : `[doc]`, sauf `clone` (`doc` puis
+            ses copies) et `split` (les morceaux à la place de `doc`).
+
+        Raises:
+            _DocumentDropped: `drop` (natif ou step d'un `filters_json`).
+        """
         name, attrs = entry
         options = _normalize_attrs(attrs)
         reussi: bool | None = None
+        if name in ("clone", "split"):
+            return self._apply_multi(name, doc, options, now=now, on_missing=on_missing)
         if name == "dissect":
             reussi = self._apply_dissect(doc, options)
         elif name == "kv":
@@ -561,6 +658,10 @@ class PipelineInterpreter:
             reussi = self._apply_json(doc, options)
         elif name == "useragent":
             reussi = self._apply_useragent(doc, options)
+        elif name == "xml":
+            reussi = self._apply_xml(doc, options)
+        elif name == "dns":
+            reussi = self._apply_dns(doc, options)
         elif name in PLUGINS_SIMPLES:
             reussi = PLUGINS_SIMPLES[name](doc, options)
         elif name == "cidr":
@@ -574,6 +675,39 @@ class PipelineInterpreter:
         if reussi:
             apply_common_options(doc, options, now=now, on_missing=on_missing)
         logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
+        return [doc]
+
+    @traced
+    def _apply_multi(
+        self, name: str, doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None, on_missing: str
+    ) -> list[dict[str, Any]]:
+        """`clone { … }` / `split { … }` — délègue à `multievents` (#141).
+
+        Construit une fois par jeu d'options (clé JSON triée) ; options
+        invalides : bloc ignoré, tracé. Les options communes (#116)
+        s'appliquent à chaque nouvel événement, pas à l'original, comme
+        `filter_matched` dans `clone.rb` / `split.rb`.
+        """
+        cache: dict[str, Any] = self._clone_filters if name == "clone" else self._split_filters
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in cache:
+            try:
+                cache[cle] = CloneFilter(options) if name == "clone" else SplitFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin {} ignoré : {}", name, exc)
+                cache[cle] = None
+        filtre = cache[cle]
+        if filtre is None:
+            return [doc]
+        nouveaux = filtre.apply(doc)
+        if nouveaux is None:
+            logger.debug("_apply_multi | {} sans nouvel événement", name)
+            return [doc]
+        for event in nouveaux:
+            apply_common_options(event, options, now=now, on_missing=on_missing)
+        resultat = [doc, *nouveaux] if name == "clone" else nouveaux
+        logger.debug("_apply_multi | {} -> {} événement(s)", name, len(resultat))
+        return resultat
 
     @traced
     def _apply_fingerprint(self, entry: list, doc: dict[str, Any], options: dict[str, Any]) -> bool:
@@ -655,6 +789,54 @@ class PipelineInterpreter:
                 filtre = None
             self._useragent_filters[cle] = filtre
         filtre = self._useragent_filters[cle]
+        if filtre is None:
+            return False
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_xml(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { xml { source => ... target => ... } }` — délègue à `xmlfilter.XmlFilter` (#121).
+
+        Construit une fois par jeu d'options (clé JSON triée). Options
+        invalides (`target` absent avec `store_xml`, `parse_options` refusé…) :
+        bloc ignoré, tracé, sans nouvel essai.
+
+        Returns:
+            True si une valeur a été extraite (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._xml_filters:
+            try:
+                filtre: XmlFilter | None = XmlFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin xml ignoré : {}", exc)
+                filtre = None
+            self._xml_filters[cle] = filtre
+        filtre = self._xml_filters[cle]
+        if filtre is None:
+            return False
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_dns(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { dns { reverse => [...] resolve => [...] } }` — délègue à `dnslookup.DnsFilter` (#121).
+
+        Construit une fois par jeu d'options (clé JSON triée). Options
+        invalides (par exemple un `${VAR}` non résolu à la place d'un
+        nombre) : bloc ignoré, tracé, sans nouvel essai.
+
+        Returns:
+            True si le filtre est allé au bout (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._dns_filters:
+            try:
+                filtre: DnsFilter | None = DnsFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin dns ignoré : {}", exc)
+                filtre = None
+            self._dns_filters[cle] = filtre
+        filtre = self._dns_filters[cle]
         if filtre is None:
             return False
         return filtre.apply(doc)
@@ -1137,6 +1319,21 @@ class PipelineInterpreter:
             # concrètement, voir tests/test_interpreter.py.
             return j + 1, body[j][1]
         return j, None
+
+
+@traced
+def _output_plugins(body: list) -> list[tuple[str, dict[str, Any]]]:
+    """Plugins d'un corps `output{}`, en descendant dans `if`/`else if`/`else` (voir `_branch_chain`)."""
+    plugins: list[tuple[str, dict[str, Any]]] = []
+    for entry in body:
+        if entry[0] in ("if", "else if"):
+            plugins.extend(_output_plugins(entry[1][-1][0]))
+        elif entry[0] == "else":
+            plugins.extend(_output_plugins(entry[1]))
+        else:
+            plugins.append((entry[0], _normalize_attrs(entry[1])))
+    logger.debug("_output_plugins | {}", len(plugins))
+    return plugins
 
 
 @traced

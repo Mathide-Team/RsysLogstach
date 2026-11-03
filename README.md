@@ -22,6 +22,7 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 |--------|------|-------------|
 | `omprog.py` | Point d'entrée asyncio (rsyslog omprog) | tous les modules métier |
 | `tracing.py` | Décorateur `@traced` (loguru) | — |
+| `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | tracing |
 | `util.py` | `add_failure_tags`, `load_json_file`, `opensearch_auth_from_env` | tracing |
 | `templates.py` | `render_template()` — syntaxe `%{field}` / `%{[a][b]}` | tracing |
 | `fingerprint.py` | `compute_fingerprint()` et filtre `FingerprintFilter` (#114) | templates, tracing |
@@ -29,8 +30,11 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
 | `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, useragent, util |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | dnslookup, enrichment, filters, fingerprint, grok, i18n, multievents, simples, templates, tracing, useragent, util, xmlfilter |
 | `useragent.py` | `UserAgentFilter` — plugin `useragent` natif, ua-parser (#121) | templates, tracing |
+| `xmlfilter.py` | `XmlFilter` — plugin `xml` natif, lxml (#121) | templates, tracing, util |
+| `multievents.py` | `CloneFilter`, `SplitFilter` — plusieurs événements par message (#141) | templates, tracing |
+| `dnslookup.py` | `DnsFilter` — plugin `dns` natif, dnspython (#121) | templates, tracing, util |
 | `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
@@ -93,7 +97,11 @@ Voir `pipeline.example.d/` : input UDP → filter (DNS, GeoIP) → output OpenSe
 Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 `filter{}`/`output{}`) et limites : [docs/audit-fonctions-logstash.md](docs/audit-fonctions-logstash.md).
 
-Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. `clone` et `split` restent sans effet.
+Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`, `delete`), `pipeline` et `routing` acceptent des gabarits, par exemple `opensearch { index => "logs" action => "update" document_id => "%{id}" doc_as_upsert => true routing => "%{host}" }`.
+
+Nom de champ contenant des crochets (#124) : avec `--field-reference-escape-style percent`, `%{[map%5Bk%5D]}` lit le champ `map[k]` ; `ampersand` utilise `&#91;` et `&#93;`. Défaut `none`, comme Logstash.
+
+Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. Plusieurs événements par message (#141) : `clone { clones => ["copie"] }` garde l'original et ajoute une copie par nom (ajouté à `tags`, ou écrit dans `type` avec `ecs_compatibility => disabled`) ; `split { field => "message" terminator => "\n" target => "ligne" }` remplace l'événement par un événement par morceau non vide (une liste est parcourue élément par élément ; champ absent ou d'un autre type : tag `_splitparsefailure`). Les options communes (`add_field`, `add_tag`…) s'appliquent aux nouveaux événements ; ceux-ci poursuivent le pipeline à partir du filtre suivant, et chacun est indexé selon ses propres sorties. Un `drop` n'écarte que l'événement qu'il atteint ; rsyslog reçoit un échec transitoire si l'indexation de l'un d'eux échoue, et renvoie alors le message entier.
 
 Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.
 Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`
@@ -182,6 +190,66 @@ filter {
   `pyproject.toml`, pas ceux du jar de Logstash ; un User-Agent récent ou
   rare peut être classé autrement. Fichier `regexes` illisible : bloc ignoré
   (journal DEBUG).
+
+#### `xml` (#121)
+
+```
+filter {
+  xml {
+    source => "message"
+    target => "doc"
+    xpath => { "/evenement/@id" => "[evenement][id]" }
+  }
+}
+```
+
+- `store_xml` (vrai par défaut, `target` requis) : conversion façon
+  XmlSimple, comme Logstash — attributs et enfants dans le même objet,
+  enfants en tableaux (`force_array`), texte seul en chaîne ou sous
+  `content` (`force_content`, ou en présence d'attributs), éléments vides
+  omis (`suppress_empty`). L'élément racine n'apparaît pas. Analyse stricte.
+- `xpath => { "expression" => "[champ]" }` : analyse tolérante (ou selon
+  `parse_options`, par ex. `strict`), résultats en tableau (texte seul avec
+  `force_array => false` et un résultat). Préfixes de la racine (défaut sous
+  `xmlns`) ou `namespaces` ; `remove_namespaces`.
+- Échec d'analyse, expression invalide, tableau de longueur différente de 1
+  ou valeur non textuelle : tag `_xmlparsefailure`.
+- Sécurité : ni entités externes, ni DTD, ni XInclude, ni réseau ;
+  `parse_options` `noent`, `dtdload`, `dtdattr`, `dtdvalid` ou `xinclude`
+  rend le bloc invalide (ignoré, journal DEBUG).
+- Différences : lxml (libxml2) remplace Nokogiri et REXML ; un document
+  sans élément racine, même en mode tolérant, ne donne aucun résultat XPath.
+
+#### `dns` (#121)
+
+```
+filter {
+  dns {
+    reverse => [ "[host][ip]" ]
+    action => "replace"
+    nameserver => { address => ["192.0.2.53"] search => ["lan"] }
+    hit_cache_size => 4096
+  }
+}
+```
+
+- `resolve` (nom → première adresse, IPv4 puis IPv6) et `reverse`
+  (adresse → premier nom) ; `action` `append` (défaut, le champ devient
+  `[valeur, résultat]`) ou `replace`.
+- Résolveurs dans l'ordre : `hostsfile`, `/etc/hosts`, puis `nameserver`
+  (chaîne, liste, ou hash `address`/`search`/`ndots`). Sans les deux :
+  `/etc/hosts` puis le DNS du système ; avec `hostsfile` seul : aucun DNS.
+- `timeout` (0,5 s), `max_retries` (2), `tag_on_timeout` (`_dnstimeout`),
+  caches `hit_cache_size`/`hit_cache_ttl` (0, 60 s) et
+  `failed_cache_size`/`failed_cache_ttl` (0, 5 s), noms IDNA.
+- Comme Logstash, un champ absent est sauté, mais plusieurs valeurs, une
+  valeur non textuelle, une adresse invalide ou un échec arrêtent le
+  filtre, sans options communes.
+- `RSYSLOGSTACH_DNS=off` coupe les requêtes réseau (fichiers hosts
+  seulement) ; les tests le positionnent.
+- Limite : les nombres écrits `"${VAR}"` ne sont pas encore remplacés
+  (#122) : le bloc est alors ignoré (journal DEBUG), c'est le cas de
+  `pipeline.example.d/25_…`.
 
 Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
 
@@ -275,6 +343,40 @@ la même seconde), relisibles avec `zcat`.
 export OPENSEARCH_USER=admin
 export OPENSEARCH_PASSWORD=secret
 ```
+
+#### Dans le `.conf` (issue #125)
+
+Les options de connexion du plugin
+[logstash-output-opensearch](https://github.com/opensearch-project/logstash-output-opensearch)
+sont lues dans les blocs `opensearch{}` / `elasticsearch{}` de `output{}`,
+y compris dans les branches `if` :
+
+```
+output {
+  opensearch {
+    hosts => ["os1:9200", "os2:9200"]
+    ssl => true
+    ssl_certificate_verification => true
+    user => "admin"
+    password => "secret"
+    cacert => "/etc/rsyslogstach/ca.pem"
+    index => "logs-%{+YYYY.MM.dd}"
+  }
+}
+```
+
+| Option | Effet | Équivalent prioritaire |
+|---|---|---|
+| `hosts` | URL ou liste ; sans schéma : `https` si `ssl => true`, `http` sinon ; port 9200 par défaut | `--opensearch-host` |
+| `ssl` | Schéma des URLs sans schéma ; erreur s'il contredit une URL `http://` / `https://` | — |
+| `ssl_certificate_verification => false` | Certificats non vérifiés | `--no-verify-certs` |
+| `user` / `password` | Authentification basique (les deux ensemble) | `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` |
+| `cacert`, `tls_certificate`, `tls_key` | Fichiers PEM (voir ci-dessous) | `--cacert`, `--tls-certificate`, `--tls-key` |
+
+Le pont n'ouvre qu'une connexion OpenSearch : si deux blocs donnent des
+valeurs différentes pour la même option, il refuse de démarrer. Une valeur
+`${VAR}` non remplacée est aussi refusée. Un mot de passe en clair dans le
+`.conf` est lisible par quiconque lit le fichier : préférer l'environnement.
 
 #### Par certificat client (mTLS, issue #100)
 
@@ -403,6 +505,8 @@ Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont ré
 | prometheus-client | Apache-2.0 AND BSD-2-Clause |
 | pyyaml, mmh3, loguru | MIT |
 | ua-parser, ua-parser-builtins | Apache-2.0 |
+| lxml | BSD-3-Clause |
+| dnspython | ISC |
 
 ## Suivi
 

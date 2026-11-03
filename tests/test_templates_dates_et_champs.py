@@ -81,11 +81,13 @@ class TestGabaritsDeDate:
             ("ss", "09"),
             ("S", "1"),
             ("SSS", "123"),
-            ("SSSSSS", "123000"),  # précision ms, complétée par des zéros
+            ("SSSSSS", "123456"),  # microsecondes (#123)
+            ("SSSSSSSSS", "123456000"),  # complétées par des zéros
             ("X", "Z"),
             ("Z", "+0000"),
             ("ZZZZ", "+00:00"),
-            ("EEE", "EEE"),  # lettre non gérée : recopiée (limite documentée)
+            ("EEE", "Thu"),  # #123
+            ("F", "F"),  # lettre non gérée : recopiée (limite documentée)
             ("HH'h'mm", "08h05"),
             ("'T'", "T"),
             ("''", "'"),

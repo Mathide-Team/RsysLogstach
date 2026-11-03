@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 12:23+0000\n"
+"POT-Creation-Date: 2026-11-03 12:53+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: deusyv\n"
 "Language-Team: English\n"
@@ -138,6 +138,10 @@ msgstr "Filter chain (filters.example.json format)"
 #: src/omprog.py
 msgid "Clé privée non chiffrée du certificat client (option tls_key de Logstash)"
 msgstr "Unencrypted private key of the client certificate (Logstash tls_key option)"
+
+#: src/omprog.py
+msgid "Crochets échappés dans les noms de champs, comme field_reference.escape_style (défaut : none)"
+msgstr "Escaped brackets in field names, like field_reference.escape_style (default: none)"
 
 #: src/omprog.py
 msgid "Dictionnaire statique (format enrich-dict.example.json)"
@@ -290,29 +294,29 @@ msgid "Échec inattendu du traitement d'un message erreur={error}"
 msgstr "Unexpected failure while processing a message error={error}"
 
 #
-#: src/simples.py
 #
+#: src/simples.py
 msgid "cidr : lecture impossible de {} : {}"
 msgstr "cidr: cannot read {}: {}"
 
-#: src/simples.py
 #
+#: src/simples.py
 msgid "cidr : réseau invalide ignoré : {}"
 msgstr "cidr: invalid network ignored: {}"
 
-#: src/simples.py
 #
+#: src/simples.py
 msgid "csv : analyse impossible du champ {} : {}"
 msgstr "csv: cannot parse field {}: {}"
 
 #
-#: src/simples.py
 #
+#: src/simples.py
 msgid "csv : conversion impossible de {} en {}"
 msgstr "csv: cannot convert {} to {}"
 
-#: src/simples.py
 #
+#: src/simples.py
 msgid "csv : type {} inconnu pour convert"
 msgstr "csv: unknown type {} for convert"
 
@@ -325,12 +329,12 @@ msgid "truncate ignoré : length_bytes doit être un entier positif"
 msgstr "truncate ignored: length_bytes must be a positive integer"
 
 #
-#: src/simples.py
 #
+#: src/simples.py
 msgid "urldecode : décodage impossible : {}"
 msgstr "urldecode: cannot decode: {}"
 
-#: src/simples.py
 #
+#: src/simples.py
 msgid "uuid ignoré : option target manquante"
 msgstr "uuid ignored: missing target option"
