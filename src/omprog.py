@@ -23,7 +23,10 @@ Ordre de traitement d'un message, fidèle au schéma du README :
 
 Secrets : `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` en environnement
 uniquement (`util.opensearch_auth_from_env`), jamais en option de ligne de
-commande (visible par `ps aux`).
+commande (visible par `ps aux`). Authentification par certificat (mTLS,
+issue #100) : `--tls-certificate` / `--tls-key`, avec `--cacert` pour
+l'autorité du cluster, mêmes noms que le plugin logstash-output-opensearch ;
+ces fichiers sont des chemins, pas des secrets en clair.
 """
 
 from __future__ import annotations
@@ -115,6 +118,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=_("Nœud OpenSearch, ex. https://localhost:9200 (option répétable ; défaut : https://localhost:9200)"),
     )
     g.add_argument("--no-verify-certs", action="store_true", help=_("Ne pas vérifier les certificats TLS"))
+    # mTLS (issue #100) : mêmes noms que le plugin logstash-output-opensearch.
+    g.add_argument(
+        "--cacert", metavar="PEM", help=_("Autorité de certification du cluster (option cacert de Logstash)")
+    )
+    g.add_argument(
+        "--tls-certificate",
+        metavar="PEM",
+        help=_("Certificat client présenté au cluster, mTLS (option tls_certificate de Logstash)"),
+    )
+    g.add_argument(
+        "--tls-key", metavar="PEM", help=_("Clé privée non chiffrée du certificat client (option tls_key de Logstash)")
+    )
     g.add_argument(
         "--index-pattern",
         default=DEFAULT_INDEX_PATTERN,
@@ -193,6 +208,29 @@ def parse_hosts(urls: list[str] | None) -> tuple[list[dict[str, str | int]], boo
     if len(schemes) > 1:
         raise ValueError("--opensearch-host : tous les nœuds doivent utiliser le même schéma (http ou https)")
     return hosts, schemes == {"https"}
+
+
+@traced
+def check_tls_options(args: argparse.Namespace, use_ssl: bool) -> None:
+    """Contrôle `--cacert` / `--tls-certificate` / `--tls-key` au démarrage (issue #100).
+
+    Comme le plugin logstash-output-opensearch : certificat et clé vont
+    ensemble, et n'ont de sens qu'en HTTPS. Échec franc plutôt qu'une
+    connexion en clair qui ignorerait le certificat.
+
+    Raises:
+        ValueError: certificat sans clé (ou l'inverse), option TLS avec des
+            nœuds `http://`, ou fichier introuvable.
+    """
+    if bool(args.tls_certificate) != bool(args.tls_key):
+        raise ValueError("--tls-certificate et --tls-key vont ensemble (certificat client et sa clé privée)")
+    options = {"--cacert": args.cacert, "--tls-certificate": args.tls_certificate, "--tls-key": args.tls_key}
+    given = {name: path for name, path in options.items() if path}
+    if given and not use_ssl:
+        raise ValueError(f"{', '.join(given)} : nœuds OpenSearch en https:// requis")
+    for name, path in given.items():
+        if not Path(path).exists():
+            raise ValueError(f"{name} : fichier introuvable : {path}")
 
 
 @traced
@@ -355,6 +393,7 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
         raw = args.document_id_fingerprint.strip()
         fingerprint_fields = [] if raw in ("", "*") else [f.strip() for f in raw.split(",") if f.strip()]
     hosts, use_ssl = parse_hosts(args.opensearch_host)
+    check_tls_options(args, use_ssl)
     indexer = indexer_factory(
         hosts=hosts,
         auth=opensearch_auth_from_env(),
@@ -368,6 +407,9 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
         document_id_fingerprint_key=(
             args.fingerprint_key if args.fingerprint_key is not None else os.environ.get("FINGERPRINT_KEY")
         ),
+        ca_certs=args.cacert,
+        client_cert=args.tls_certificate,
+        client_key=args.tls_key,
     )
     return Bridge(
         indexer=indexer,

@@ -113,6 +113,9 @@ class OpenSearchIndexer:
         document_id_fingerprint_fields: list[str] | None = None,
         document_id_fingerprint_method: str = "sha256",
         document_id_fingerprint_key: str | None = None,
+        ca_certs: str | None = None,
+        client_cert: str | None = None,
+        client_key: str | None = None,
     ) -> None:
         """Initialise le client OpenSearch.
 
@@ -136,6 +139,14 @@ class OpenSearchIndexer:
                 (voir `fingerprint.compute_fingerprint`).
             document_id_fingerprint_method: Algorithme de hachage
                 (`sha256` par défaut, voir `fingerprint.py`).
+            ca_certs: Fichier PEM (ou dossier) de l'autorité qui a signé le
+                certificat du cluster ; `cacert` du plugin
+                logstash-output-opensearch (issue #100). `None` : magasin
+                système / certifi.
+            client_cert: Certificat client PEM présenté au cluster (mTLS) ;
+                `tls_certificate` du plugin Logstash (issue #100).
+            client_key: Clé privée PEM non chiffrée de `client_cert` ;
+                `tls_key` du plugin Logstash (issue #100).
         """
         self._index_pattern = index_pattern
         self._document_id_template: CompiledTemplate | None = (
@@ -155,6 +166,9 @@ class OpenSearchIndexer:
             use_ssl=use_ssl,
             verify_certs=verify_certs,
             ssl_show_warn=False,
+            ca_certs=ca_certs,
+            client_cert=client_cert,
+            client_key=client_key,
             timeout=OPENSEARCH_TIMEOUT,
             retry_on_timeout=True,
         )

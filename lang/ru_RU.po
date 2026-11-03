@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-10-25 07:57+0000\n"
+"POT-Creation-Date: 2026-11-03 11:23+0000\n"
 "PO-Revision-Date: 2026-10-24 17:02+0000\n"
 "Last-Translator: Automatically generated\n"
 "Language-Team: none\n"
@@ -18,17 +18,14 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<10 || n%100>=20) ? 1 : 2);\n"
 
 #: src/filters.py
-#, python-brace-format
 msgid "base geoip illisible : {} ({})"
 msgstr ""
 
 #: src/filters.py
-#, python-brace-format
 msgid "dictionnaire translate illisible : {} ({})"
 msgstr ""
 
 #: src/filters.py
-#, python-brace-format
 msgid "exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"
 msgstr ""
 
@@ -61,6 +58,10 @@ msgid "Arrêt du pont messages={count}"
 msgstr ""
 
 #: src/omprog.py
+msgid "Autorité de certification du cluster (option cacert de Logstash)"
+msgstr ""
+
+#: src/omprog.py
 msgid "Base MaxMind GeoIP2 City (.mmdb)"
 msgstr ""
 
@@ -74,6 +75,10 @@ msgstr ""
 
 #: src/omprog.py
 msgid "CLÉ"
+msgstr ""
+
+#: src/omprog.py
+msgid "Certificat client présenté au cluster, mTLS (option tls_certificate de Logstash)"
 msgstr ""
 
 #: src/omprog.py
@@ -94,6 +99,10 @@ msgstr ""
 
 #: src/omprog.py
 msgid "Chaîne de filtres (format filters.example.json)"
+msgstr ""
+
+#: src/omprog.py
+msgid "Clé privée non chiffrée du certificat client (option tls_key de Logstash)"
 msgstr ""
 
 #: src/omprog.py
