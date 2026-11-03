@@ -405,6 +405,41 @@ def _assign_mutate_field(
 
 
 @traced
+def apply_common_options(
+    doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None = None, on_missing: str = "keep"
+) -> None:
+    """Options communes à tout filtre Logstash : `add_field`, `add_tag`, `remove_field`, `remove_tag` (#116).
+
+    Appliquées dans cet ordre, comme `filter_matched` de Logstash, et
+    seulement après un filtre RÉUSSI : `mutate` (via `apply_mutate`) et,
+    depuis #116, les autres plugins natifs de `interpreter` (`dissect`,
+    `date`, `geoip`, `translate`, `mmdb`…). Les valeurs d'`add_field` sont
+    des gabarits sprintf ; `add_tag`/`remove_tag` sont des listes plates.
+    """
+    logger.debug("apply_common_options() called | options={}", sorted(set(options) & set(COMMON_OPTION_KEYS)))
+    add_fields = options.get("add_field", {})
+    if isinstance(add_fields, dict):
+        for key, raw_value in add_fields.items():
+            _assign_mutate_field(doc, key, raw_value, now=now, on_missing=on_missing)
+    add_tags = options.get("add_tag")
+    if isinstance(add_tags, list):
+        tags = doc.setdefault("tags", [])
+        tags.extend(tag for tag in add_tags if tag not in tags)
+    remove_fields = options.get("remove_field", [])
+    if isinstance(remove_fields, list):
+        for field_ref in remove_fields:
+            remove_field_path(doc, parse_field_path(field_ref))
+    remove_tags = options.get("remove_tag")
+    if isinstance(remove_tags, list) and isinstance(doc.get("tags"), list):
+        doc["tags"] = [tag for tag in doc["tags"] if tag not in remove_tags]
+    logger.debug("apply_common_options() returning | tags={}", doc.get("tags"))
+
+
+#: Options communes à tout filtre (voir `apply_common_options`, #116).
+COMMON_OPTION_KEYS = ("add_field", "add_tag", "remove_field", "remove_tag")
+
+
+@traced
 def _apply_string_case(doc: dict[str, Any], field_ref: str, transform: Any) -> None:
     """Applique `transform` (`str.upper`/`str.lower`/`str.capitalize`) à un champ texte, en place.
 
@@ -629,17 +664,7 @@ def apply_mutate(
         # que ses propres mutations) : sautées elles aussi si une
         # exception a déjà été levée plus haut, jamais appliquées "à
         # moitié" (session 23).
-        for key, raw_value in options.get("add_field", {}).items():
-            _assign_mutate_field(doc, key, raw_value, now=now, on_missing=on_missing)
-        add_tags = options.get("add_tag")
-        if isinstance(add_tags, list):
-            tags = doc.setdefault("tags", [])
-            tags.extend(tag for tag in add_tags if tag not in tags)
-        for field_ref in options.get("remove_field", []):
-            remove_field_path(doc, parse_field_path(field_ref))
-        remove_tags = options.get("remove_tag")
-        if isinstance(remove_tags, list) and isinstance(doc.get("tags"), list):
-            doc["tags"] = [tag for tag in doc["tags"] if tag not in remove_tags]
+        apply_common_options(doc, options, now=now, on_missing=on_missing)
     except Exception as exc:  # reproduit le `rescue => ex` générique du plugin réel
         logger.warning(_("exception pendant l'application du filtre mutate, opérations restantes ignorées : {}"), exc)
         tag_on_failure = options.get("tag_on_failure", "_mutate_error")

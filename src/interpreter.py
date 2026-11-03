@@ -252,7 +252,7 @@ from logstash_pipeline_parser import Pipeline
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
-from filters import DateFilter, Dissector, FilterPipeline, apply_mutate
+from filters import DateFilter, Dissector, FilterPipeline, apply_common_options, apply_mutate
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
 from util import add_failure_tags, load_json_file
@@ -448,24 +448,30 @@ class PipelineInterpreter:
         """Dispatche un plugin `filter{}` vers son comportement (ou l'ignore, tracé)."""
         name, attrs = entry
         options = _normalize_attrs(attrs)
+        reussi: bool | None = None
         if name == "dissect":
-            self._apply_dissect(doc, options)
+            reussi = self._apply_dissect(doc, options)
         elif name == "mutate":
-            self._apply_mutate(doc, options, now=now, on_missing=on_missing)
+            self._apply_mutate(doc, options, now=now, on_missing=on_missing)  # options communes incluses
         elif name == "translate":
-            self._apply_translate(doc, options, now=now, on_missing=on_missing)
+            reussi = self._apply_translate(doc, options, now=now, on_missing=on_missing)
         elif name == "mmdb":
-            self._apply_mmdb(doc, options)
+            reussi = self._apply_mmdb(doc, options)
         elif name == "geoip":
-            self._apply_geoip(doc, options)
+            reussi = self._apply_geoip(doc, options)
         elif name == "filters_json":
             self._apply_filters_json(doc, options, now=now, on_missing=on_missing)
         elif name == "date":
-            self._apply_date(doc, options)
+            reussi = self._apply_date(doc, options)
         elif name == "drop":
             self._apply_drop(options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
+        # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
+        # après un filtre réussi, comme `filter_matched` de Logstash.
+        if reussi:
+            apply_common_options(doc, options, now=now, on_missing=on_missing)
+        logger.debug("_run_filter_plugin: {} réussi={}", name, reussi)
 
     @traced
     def _apply_drop(self, options: dict[str, Any]) -> None:
@@ -492,11 +498,16 @@ class PipelineInterpreter:
         raise _DocumentDropped("drop natif")
 
     @traced
-    def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
-        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`."""
+    def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`dissect { mapping => { champ_source => patron } }` — réutilise `filters.Dissector`.
+
+        Returns:
+            True si au moins un patron a été découpé (options communes, #116).
+        """
+        reussi = False
         mapping = options.get("mapping")
         if not isinstance(mapping, dict):
-            return
+            return False
         for source_field, pattern in mapping.items():
             value = doc.get(source_field)
             if not isinstance(value, str) or not isinstance(pattern, str):
@@ -512,6 +523,8 @@ class PipelineInterpreter:
             extracted = dissector.apply(value)
             if extracted is not None:
                 doc.update(extracted)
+                reussi = True
+        return reussi
 
     @traced
     def _apply_mutate(
@@ -532,7 +545,7 @@ class PipelineInterpreter:
     @traced
     def _apply_translate(
         self, doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None, on_missing: str
-    ) -> None:
+    ) -> bool:
         """`translate { dictionary_path => ... source => ... target => ... fallback => ... }`.
 
         Résout `source` (chemin `%{[a][b]}`, via `templates.resolve_field`),
@@ -555,29 +568,30 @@ class PipelineInterpreter:
         target = options.get("target")
         if not (isinstance(dictionary_path, str) and isinstance(source, str) and isinstance(target, str)):
             logger.debug("plugin translate mal formé (dictionary_path/source/target requis), ignoré")
-            return
+            return False
         dictionary = self._translate_dictionaries.get(dictionary_path)
         if dictionary is None:
             try:
                 dictionary = self._translate_dictionary_factory(dictionary_path)
             except (OSError, yaml.YAMLError) as exc:
                 logger.debug("dictionnaire translate illisible, ignoré : {} ({})", dictionary_path, exc)
-                return
+                return False
             self._translate_dictionaries[dictionary_path] = dictionary
         key = resolve_field(doc, parse_field_path(source))
         value = dictionary.lookup(key) if key is not _MISSING else None
         if value is None:
             fallback = options.get("fallback")
             if fallback is None:
-                return
+                return False
             if isinstance(fallback, str):
                 value = render_template(fallback, doc, now=now, on_missing=on_missing)
             else:
                 value = fallback
         assign_field(doc, parse_field_path(target), value)
+        return True
 
     @traced
-    def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`mmdb { source => ... database => ... target => ... }`.
 
         Résout `source` (chemin `%{[a][b]}`), interroge la base de
@@ -599,27 +613,28 @@ class PipelineInterpreter:
         target = options.get("target")
         if not (isinstance(source, str) and isinstance(database, str) and isinstance(target, str)):
             logger.debug("plugin mmdb mal formé (source/database/target requis), ignoré")
-            return
+            return False
         ip = resolve_field(doc, parse_field_path(source))
         if not isinstance(ip, str):
-            return
+            return False
         lookup = self._mmdb_lookups.get(database)
         if lookup is None:
             try:
                 lookup = self._mmdb_lookup_factory(database)
             except (OSError, maxminddb.InvalidDatabaseError) as exc:
                 logger.debug("base mmdb illisible, ignorée : {} ({})", database, exc)
-                return
+                return False
             self._mmdb_lookups[database] = lookup
         record = lookup.lookup(ip)
         if not record:
-            return
+            return False
         target_path = parse_field_path(target)
         for field_name, field_value in record.items():
             assign_field(doc, [*target_path, str(field_name)], field_value)
+        return True
 
     @traced
-    def _apply_geoip(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_geoip(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`geoip { source => ... [target => "geoip"] database => ... [fields] [tag_on_failure] }`.
 
         LE filtre officiel de Logstash. Contrairement à `mmdb` (base
@@ -670,27 +685,28 @@ class PipelineInterpreter:
         target = options.get("target", "geoip")
         if not (isinstance(source, str) and isinstance(database, str) and isinstance(target, str)):
             logger.debug("plugin geoip mal formé (source/database requis), ignoré")
-            return
+            return False
         ip = resolve_field(doc, parse_field_path(source))
         if not isinstance(ip, str):
             self._geoip_lookup_failure(doc, options)
-            return
+            return False
         lookup = self._geoip_lookups.get(database)
         if lookup is None:
             try:
                 lookup = self._geoip_lookup_factory(database)
             except (OSError, maxminddb.InvalidDatabaseError) as exc:
                 logger.debug("base geoip illisible, ignorée : {} ({})", database, exc)
-                return
+                return False
             self._geoip_lookups[database] = lookup
         record = lookup.lookup(ip)
         if not record:
             self._geoip_lookup_failure(doc, options)
-            return
+            return False
         fields = options.get("fields")
         if isinstance(fields, list) and fields:
             record = {key: value for key, value in record.items() if key in fields}
         assign_field(doc, parse_field_path(target), record)
+        return True
 
     @staticmethod
     @traced
@@ -747,7 +763,7 @@ class PipelineInterpreter:
             raise _DocumentDropped
 
     @traced
-    def _apply_date(self, doc: dict[str, Any], options: dict[str, Any]) -> None:
+    def _apply_date(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
         """`filter { date { match => [champ, motif, ...] [target] [timezone] [tag_on_failure] } }`.
 
         Session 19 — item du nouvel audit Context7 (voir CLAUDE.md,
@@ -796,7 +812,7 @@ class PipelineInterpreter:
         (session 25). Un `match` mal formé reste ici ignoré (log DEBUG) :
         un `.conf` imparfait ne doit pas faire planter le traitement.
         """
-        DateFilter(options).apply(doc)
+        return DateFilter(options).apply(doc)
 
     # ------------------------------------------------------------------
     # output{}
