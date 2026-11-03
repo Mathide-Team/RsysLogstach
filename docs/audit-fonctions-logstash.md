@@ -28,7 +28,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 | `%{+%s}` (epoch) | fait | Secondes depuis l'epoch de `@timestamp` (corrigé par #102 : rendait `%0`). |
 | Champ absent | fait | `--pipeline-on-missing` / `--filters-on-missing` : `keep` conserve `%{...}`, `empty` rend une chaîne vide. Un champ `null` se rend vide. |
 | Valeur hash ou tableau dans `%{...}` | fait | Rendue en JSON compact. |
-| Échappement de crochets dans un nom de champ (`none`/`percent`/`ampersand`) | pas fait | Cas non rencontré dans les logs visés. |
+| Échappement de crochets dans un nom de champ (`none`/`percent`/`ampersand`) | fait | `--field-reference-escape-style` (#124), équivalent de `field_reference.escape_style` de logstash.yml : `%5B`/`%5D` ou `&#91;`/`&#93;` désignent un crochet littéral, dans les gabarits comme dans les options des plugins. |
 | `${VAR}` / `${VAR:défaut}` (variables d'environnement du `.conf`) | pas fait | Le texte est gardé littéralement. Sans effet aujourd'hui sur la connexion, qui vient de la ligne de commande, mais un `index => "${X}-%{+YYYY}"` serait rendu tel quel. |
 
 ## Conditions `if` / `else if` / `else` (`src/interpreter.py`)
