@@ -280,10 +280,12 @@ def test_sortie_non_geree_ignoree():
     class Interp:
         has_output = True
 
-        def apply(self, doc, **kw):
+        def apply_events(self, doc, **kw):
             from interpreter import OutputAction
 
-            return [OutputAction("stdout", {}), OutputAction("opensearch", {"index": ["idx"], "document_id": ""})]
+            return [
+                (doc, [OutputAction("stdout", {}), OutputAction("opensearch", {"index": ["idx"], "document_id": ""})])
+            ]
 
         def close(self):
             pass

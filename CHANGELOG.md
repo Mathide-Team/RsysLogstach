@@ -17,6 +17,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ### Ajouté
 - **Variables d'environnement du `.conf`** (#122) : `${VAR}` et `${VAR:défaut}` substitués au chargement, avant l'analyse — comme Logstash. La variable définie prime sur la valeur par défaut ; une variable non définie sans défaut refuse le démarrage (`ValueError` qui la nomme). `%{champ}` (rendu par événement) et les noms invalides (`${1x}`) ne sont pas touchés. Les exemples `pipeline.example.d/` gagnent des valeurs par défaut.
+- **`clone` et `split` natifs** (#141) : un message peut produire plusieurs événements. `clone` (`clones`, `type` ou tag selon `ecs_compatibility`) et `split` (`field`, `terminator`, `target`, tag `_splitparsefailure`) ; les nouveaux événements poursuivent le pipeline après le filtre et omprog indexe chacun selon ses sorties. Nouvelle méthode `PipelineInterpreter.apply_events` ; `apply` ne renvoie que les actions du document d'origine. Toutes les sections `filter{}` passent désormais avant les sections `output{}`, comme Logstash.
 - Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`,
   `delete`), `pipeline`, `routing` et `doc_as_upsert`, en gabarits sprintf.
 - `--field-reference-escape-style` (#124) : crochets échappés (`percent`,

@@ -30,9 +30,10 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
 | `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | dnslookup, enrichment, filters, fingerprint, grok, i18n, simples, templates, tracing, useragent, util, xmlfilter |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | dnslookup, enrichment, filters, fingerprint, grok, i18n, multievents, simples, templates, tracing, useragent, util, xmlfilter |
 | `useragent.py` | `UserAgentFilter` — plugin `useragent` natif, ua-parser (#121) | templates, tracing |
 | `xmlfilter.py` | `XmlFilter` — plugin `xml` natif, lxml (#121) | templates, tracing, util |
+| `multievents.py` | `CloneFilter`, `SplitFilter` — plusieurs événements par message (#141) | templates, tracing |
 | `dnslookup.py` | `DnsFilter` — plugin `dns` natif, dnspython (#121) | templates, tracing, util |
 | `simples.py` | plugins `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` (#120) | i18n, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
@@ -105,7 +106,7 @@ Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`, `delete`), 
 
 Nom de champ contenant des crochets (#124) : avec `--field-reference-escape-style percent`, `%{[map%5Bk%5D]}` lit le champ `map[k]` ; `ampersand` utilise `&#91;` et `&#93;`. Défaut `none`, comme Logstash.
 
-Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. `clone` et `split` restent sans effet.
+Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. Plusieurs événements par message (#141) : `clone { clones => ["copie"] }` garde l'original et ajoute une copie par nom (ajouté à `tags`, ou écrit dans `type` avec `ecs_compatibility => disabled`) ; `split { field => "message" terminator => "\n" target => "ligne" }` remplace l'événement par un événement par morceau non vide (une liste est parcourue élément par élément ; champ absent ou d'un autre type : tag `_splitparsefailure`). Les options communes (`add_field`, `add_tag`…) s'appliquent aux nouveaux événements ; ceux-ci poursuivent le pipeline à partir du filtre suivant, et chacun est indexé selon ses propres sorties. Un `drop` n'écarte que l'événement qu'il atteint ; rsyslog reçoit un échec transitoire si l'indexation de l'un d'eux échoue, et renvoie alors le message entier.
 
 Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.
 Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" ... } }`
