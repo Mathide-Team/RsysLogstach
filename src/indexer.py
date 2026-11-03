@@ -27,10 +27,10 @@ from opensearchpy import AsyncOpenSearch
 from opensearchpy.exceptions import NotFoundError, OpenSearchException, RequestError
 
 from dlq import LocalDeadLetterQueue
-from fingerprint import compute_fingerprint
-from i18n import _
-from templates import CompiledTemplate, compile_template, render
-from tracing import traced
+from pystashtemplate.fingerprint import compute_fingerprint
+from pystashtemplate.i18n import _
+from pystashtemplate.templates import CompiledTemplate, compile_template, render
+from pystashtemplate.tracing import traced
 
 OPENSEARCH_TIMEOUT = 3.0  # secondes, timeout socket du client OpenSearch
 

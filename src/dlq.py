@@ -32,7 +32,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from tracing import traced
+from pystashtemplate.tracing import traced
 
 _SIZE_UNITS = {"": 1, "b": 1, "k": 1024, "kb": 1024, "m": 1024**2, "mb": 1024**2, "g": 1024**3, "gb": 1024**3}
 _DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 7 * 86400}

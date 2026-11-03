@@ -19,7 +19,7 @@ import pytest
 
 import omprog
 from indexer import SendOutcome
-from interpreter import PipelineInterpreter
+from pystashtemplate.interpreter import PipelineInterpreter
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -281,7 +281,7 @@ def test_sortie_non_geree_ignoree():
         has_output = True
 
         def apply_events(self, doc, **kw):
-            from interpreter import OutputAction
+            from pystashtemplate.interpreter import OutputAction
 
             return [
                 (doc, [OutputAction("stdout", {}), OutputAction("opensearch", {"index": ["idx"], "document_id": ""})])

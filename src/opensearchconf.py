@@ -30,7 +30,7 @@ from typing import Any
 
 from loguru import logger
 
-from tracing import traced
+from pystashtemplate.tracing import traced
 
 INDEX_PLUGINS = frozenset({"opensearch", "elasticsearch"})
 CONNECTION_OPTIONS = (

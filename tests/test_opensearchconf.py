@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import omprog
-from interpreter import PipelineInterpreter
+from pystashtemplate.interpreter import PipelineInterpreter
 from opensearchconf import apply_connection_options, collect_connection_options, conf_auth, conf_host_urls
 
 

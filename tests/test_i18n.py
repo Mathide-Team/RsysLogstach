@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-import i18n
+import pystashtemplate.i18n as i18n
 
 ROOT = Path(__file__).resolve().parents[1]
 LANG_DIR = ROOT / "lang"
