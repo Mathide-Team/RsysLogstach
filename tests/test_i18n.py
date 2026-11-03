@@ -216,7 +216,7 @@ def _chaines_utilisateur(arbre: ast.Module):
             if mot.arg in {"help", "description", "epilog"}:
                 yield noeud.lineno, mot.value
             if mot.arg == "metavar" and not (
-                isinstance(mot.value, ast.Constant) and re.fullmatch(r"JSONL?|MMDB|URL", str(mot.value.value))
+                isinstance(mot.value, ast.Constant) and re.fullmatch(r"JSONL?|MMDB|PEM|URL", str(mot.value.value))
             ):
                 yield noeud.lineno, mot.value
 

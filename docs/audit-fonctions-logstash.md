@@ -75,7 +75,7 @@ Références : [documentation des filtres Logstash](https://www.elastic.co/guide
 |---|---|---|
 | `opensearch { … }` / `elasticsearch { … }` | partiel | Seules `index` et `document_id` (gabarits sprintf) sont lues par document. |
 | `hosts`, `user`, `password`, `ssl`, `ssl_certificate_verification` | pas fait dans le `.conf` | Fournis par `--opensearch-host`, `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD` et `--no-verify-certs`. |
-| `cacert`, `tls_certificate`, `tls_key` (mTLS) | voir #100 | Options du plugin logstash-output-opensearch ; ajoutées à la ligne de commande sous les mêmes noms par l'issue #100. |
+| `cacert`, `tls_certificate`, `tls_key` (mTLS) | fait (ligne de commande) | Mêmes noms que le plugin logstash-output-opensearch : `--cacert`, `--tls-certificate`, `--tls-key` (#100). Lus sur la ligne de commande, pas dans le `.conf`, comme `hosts`. |
 | `keystore`, `truststore` (JKS / PKCS#12) | pas fait | Format Java ; utiliser des fichiers PEM. |
 | `action`, `pipeline`, `routing`, `ilm_*`, `template*` | pas fait | `action` vaut toujours `index` ; le template d'index passe par `--index-template`. |
 | `stdout`, `file`, `http`, autres sorties | pas fait | Ignorées (trace de débogage). |

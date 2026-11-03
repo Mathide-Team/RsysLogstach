@@ -134,7 +134,8 @@ Autres options : `--enrich-key-field` / `--enrich-out-field` (`hostname` /
 `fromhost-ip` par défaut), `--index-pattern` (`switch-logs-%Y.%m.%d`),
 `--index-template-name` (`switch-logs`), `--document-id-template`,
 `--document-id-fingerprint` (champs séparés par des virgules, ou `*`),
-`--filters-on-missing` / `--pipeline-on-missing`, `--no-verify-certs`.
+`--filters-on-missing` / `--pipeline-on-missing`, `--no-verify-certs`,
+`--cacert` / `--tls-certificate` / `--tls-key` (mTLS, voir plus bas).
 `--pipeline-conf` accepte un fichier ou un dossier, dont les `*.conf` sont lus
 par ordre de nom comme le fait Logstash. Seules les sorties `opensearch` et
 `elasticsearch` d'un pipeline sont honorées (`index`, `document_id`), et
@@ -179,6 +180,36 @@ la même seconde), relisibles avec `zcat`.
 export OPENSEARCH_USER=admin
 export OPENSEARCH_PASSWORD=secret
 ```
+
+#### Par certificat client (mTLS, issue #100)
+
+À la place de l'utilisateur et du mot de passe, le pont peut présenter un
+certificat client. Les options portent les noms du plugin
+[logstash-output-opensearch](https://github.com/opensearch-project/logstash-output-opensearch)
+(`lib/logstash/plugin_mixins/opensearch/api_configs.rb`) :
+
+| Logstash (`output { opensearch { … } }`) | rsyslogstach | Rôle |
+|---|---|---|
+| `cacert => "/etc/…/ca.pem"` | `--cacert /etc/…/ca.pem` | Autorité qui a signé le certificat du cluster |
+| `tls_certificate => "/etc/…/client.pem"` | `--tls-certificate /etc/…/client.pem` | Certificat client présenté au cluster |
+| `tls_key => "/etc/…/client.key"` | `--tls-key /etc/…/client.key` | Clé privée PEM non chiffrée du certificat |
+| `keystore` / `truststore` (JKS, PKCS#12) | non pris en charge | Convertir en PEM (`openssl pkcs12 -in client.p12 -nodes`) |
+
+```bash
+src/omprog.py --opensearch-host https://os1:9200 \
+    --cacert /etc/rsyslogstach/ca.pem \
+    --tls-certificate /etc/rsyslogstach/client.pem \
+    --tls-key /etc/rsyslogstach/client.key
+```
+
+Certificat et clé vont ensemble, et les nœuds doivent être en `https://` ;
+sinon le pont refuse de démarrer. Sans `OPENSEARCH_USER` / `OPENSEARCH_PASSWORD`,
+seul le certificat authentifie. Côté OpenSearch (plugin Security), il faut
+`plugins.security.ssl.http.clientauth_mode: OPTIONAL` (ou `REQUIRE`) et un
+domaine `clientcert_auth_domain` actif dans `config.yml` ; le CN du
+certificat devient le nom d'utilisateur, à associer à un rôle dans
+`roles_mapping.yml`. La clé doit rester lisible par l'utilisateur de rsyslog
+seulement (`chmod 600`).
 
 ### Identifiant de document (`_id`)
 
