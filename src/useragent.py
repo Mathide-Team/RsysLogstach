@@ -193,31 +193,27 @@ class UserAgentFilter:
             if isinstance(parent, dict):
                 parent.pop(self._chemin_source[-1], None)
         ua, os_, appareil = resultat.user_agent, resultat.os, resultat.device
-        ecrire = self._ecrire(doc)
-        ecrire("name", ua.family)
-        ecrire("device", appareil.family)
-        ecrire("major", ua.major)
-        ecrire("minor", ua.minor)
-        ecrire("patch", ua.patch)
-        ecrire("version", _version_ua(chaine, ua.major, ua.minor, ua.patch, ua.patch_minor))
-        ecrire("os_major", os_.major)
-        ecrire("os_minor", os_.minor)
-        ecrire("os_patch", os_.patch)
+        self._ecrire(doc, "name", ua.family)
+        self._ecrire(doc, "device", appareil.family)
+        self._ecrire(doc, "major", ua.major)
+        self._ecrire(doc, "minor", ua.minor)
+        self._ecrire(doc, "patch", ua.patch)
+        self._ecrire(doc, "version", _version_ua(chaine, ua.major, ua.minor, ua.patch, ua.patch_minor))
+        self._ecrire(doc, "os_major", os_.major)
+        self._ecrire(doc, "os_minor", os_.minor)
+        self._ecrire(doc, "os_patch", os_.patch)
         version_os = _version_os(os_.major, os_.minor, os_.patch, os_.patch_minor)
-        ecrire("os_version", version_os)
-        ecrire("os_name", os_.family)
+        self._ecrire(doc, "os_version", version_os)
+        self._ecrire(doc, "os_name", os_.family)
         if not self._ecs:
-            ecrire("os", os_.family)
-        ecrire("os_full", os_.family + (" " + version_os if version_os else ""))
+            self._ecrire(doc, "os", os_.family)
+        self._ecrire(doc, "os_full", os_.family + (" " + version_os if version_os else ""))
         logger.debug("useragent : {} analysé ({})", self._source, ua.family)
         return True
 
     @traced
-    def _ecrire(self, doc: dict[str, Any]):
-        """Fonction d'écriture qui ignore les valeurs absentes (`if ua.major`)."""
-
-        def ecrire(nom: str, valeur: str | None) -> None:
-            if valeur is not None:
-                assign_field(doc, self._chemin(nom), valeur)
-
-        return ecrire
+    def _ecrire(self, doc: dict[str, Any], nom: str, valeur: str | None) -> None:
+        """Écrit le champ `nom` s'il a une valeur (`if ua.major` de Logstash)."""
+        if valeur is not None:
+            assign_field(doc, self._chemin(nom), valeur)
+        logger.debug("_ecrire({}) | {!r}", nom, valeur)
