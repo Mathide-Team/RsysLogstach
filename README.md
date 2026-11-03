@@ -103,6 +103,29 @@ réutilise le même extracteur que le step `kv` de `--filters` (options
 Les chaînes entre guillemets sont lues brutes, comme Logstash par défaut
 (`config.support_escapes: false`) : `"\d+"` reste `\d+` (#128).
 
+#### `translate` (#119)
+
+```
+filter {
+  translate {
+    source => "[ifTable][index]"
+    target => "[ifTable][name]"          # facultatif : traduction en place
+    dictionary_path => "/etc/rsyslogstach/ifName.yml"   # ou .json, .csv ; ou dictionary => { "1" => "Uplink" }
+    fallback => "index: %{[ifTable][index]}"
+    refresh_interval => 300              # relu s'il a changé ; refresh_behaviour => "merge" ou "replace"
+  }
+}
+```
+
+- Comme le plugin officiel : `override` (faux, sauf en place), `exact`,
+  `regex` (clés vues comme regex), `exact => false` (remplacement de
+  chaque clé trouvée dans la valeur), `iterate_on` (tableau de valeurs ou
+  tableau d'objets), anciens noms `field`/`destination`.
+- Le même code sert le step `translate` de `--filters`.
+- Différences : rechargement au premier document après l'intervalle (pas
+  de minuterie) ; clés comparées en texte ; une extension de fichier
+  inconnue est lue comme du YAML.
+
 #### `grok` (#112)
 
 ```

@@ -16,6 +16,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 - **Licence** (#91) : passage de MIT à GPL-3.0-or-later. `LICENSE` contient désormais le texte officiel de la GPLv3 ; s'y ajoutent `license` dans `pyproject.toml`, les en-têtes SPDX, la section Licence du README avec les licences des dépendances, et `tests/test_licence.py`.
 
 ### Ajouté
+- **`translate` complet** (#119), dans les `.conf` et le step `translate` de `--filters` (une seule implémentation, `filters.TranslateFilter`) : `dictionary` en ligne, dictionnaires JSON et CSV en plus du YAML, `exact`, `regex`, `override`, `iterate_on` (tableau de valeurs ou d'objets), `refresh_interval` et `refresh_behaviour` (`merge`/`replace`), anciens noms `field`/`destination`, `target` facultatif (traduction en place). Comportement de logstash-filter-translate : un `target` déjà présent n'est plus réécrit sans `override => true`, et un champ source absent ne déclenche plus le `fallback`.
 - Plugins `filter{}` simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`,
   `uuid`, `syslog_pri`, `truncate` (module `simples.py`).
 - `dissect` natif (#117) : `convert_datatype` (`int`, `float`) et `tag_on_failure`

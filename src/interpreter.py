@@ -205,10 +205,10 @@ connues") :
       faire planter le traitement d'un message). `timezone` n'est consulté
       QUE si le motif ne porte lui-même aucune information de fuseau —
       comme Logstash, jamais pour re-décaler un horodatage déjà zoné.
-    - `translate` : `refresh_behaviour` n'est pas honoré (dictionnaire
-      chargé une seule fois, jamais relu — voir
-      `enrichment.TranslateDictionary`) ; une clé non hachable (`source`
-      résolu en liste/dict) est traitée comme absente, pas une erreur.
+    - `translate` (#119) : délégué à `filters.TranslateFilter` ; le
+      rechargement (`refresh_interval`/`refresh_behaviour`) a lieu au
+      premier document après l'intervalle, pas sur une minuterie de fond.
+      Les clés sont comparées en texte (Ruby `to_s`).
     - `mmdb` : aucun schéma de champs n'est imposé (voir
       `enrichment.GenericMmdbLookup`) — l'enregistrement brut de la base
       est fusionné tel quel sous `target`, un niveau de profondeur
@@ -251,13 +251,20 @@ from pathlib import PurePath
 from typing import Any
 
 import maxminddb
-import yaml
 from logstash_pipeline_parser import Pipeline
 from logstash_pipeline_parser import tree as _parser_tree
 from loguru import logger
 
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
-from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
+from filters import (
+    DateFilter,
+    Dissector,
+    FilterPipeline,
+    KeyValueFilter,
+    TranslateFilter,
+    apply_common_options,
+    apply_mutate,
+)
 from fingerprint import FingerprintFilter
 from grok import GrokFilter
 from i18n import _
@@ -390,6 +397,8 @@ class PipelineInterpreter:
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
+        # #119 : un TranslateFilter par jeu d'options (None : bloc ignoré).
+        self._translate_filters: dict[str, TranslateFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -786,49 +795,39 @@ class PipelineInterpreter:
     def _apply_translate(
         self, doc: dict[str, Any], options: dict[str, Any], *, now: datetime | None, on_missing: str
     ) -> bool:
-        """`translate { dictionary_path => ... source => ... target => ... fallback => ... }`.
+        """`translate { source => ... [target => ...] [dictionary(_path) => ...] ... }` (#119).
 
-        Résout `source` (chemin `%{[a][b]}`, via `templates.resolve_field`),
-        cherche la valeur dans le dictionnaire YAML de `dictionary_path`
-        (chargé une seule fois, mis en cache par chemin — voir
-        `enrichment.TranslateDictionary`) et l'écrit à `target`. Si la clé
-        est absente (ou non hachable) ET qu'un `fallback` est fourni, ce
-        `fallback` est rendu comme un gabarit sprintf (`templates.
-        render_template`) avant d'être écrit à `target` — c'est le
-        comportement réel du plugin (le pipeline de production de
-        Mathilde l'utilise avec `fallback => "index: %{[ifTable][index]}"`,
-        voir `pipeline.example.d/`). Sans `fallback` et sans
-        correspondance, `target` n'est pas touché (comme un `mutate` sans
-        correspondance). `refresh_behaviour` (ex. "replace") est normalisé
-        dans `options` mais jamais honoré — voir "Limites assumées" dans
-        la docstring du module.
+        Délègue à `filters.TranslateFilter` (même code que le step
+        `translate` de `--filters`), construit au premier document concerné
+        et mis en cache par jeu d'options. Les dictionnaires fichiers sont
+        partagés par chemin (`_translate_dictionaries`, chargés une seule
+        fois). Options incohérentes ou fichier illisible : bloc ignoré,
+        tracé, sans nouvel essai.
+
+        Returns:
+            True si les options communes (#116) doivent suivre.
         """
-        dictionary_path = options.get("dictionary_path")
-        source = options.get("source")
-        target = options.get("target")
-        if not (isinstance(dictionary_path, str) and isinstance(source, str) and isinstance(target, str)):
-            logger.debug("plugin translate mal formé (dictionary_path/source/target requis), ignoré")
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._translate_filters:
+            try:
+                filtre: TranslateFilter | None = TranslateFilter(options, dictionary_factory=self._translate_dictionary)
+            except ValueError as exc:
+                logger.debug("plugin translate ignoré : {}", exc)
+                filtre = None
+            self._translate_filters[cle] = filtre
+        filtre = self._translate_filters[cle]
+        if filtre is None:
             return False
+        return filtre.apply(doc, now=now, on_missing=on_missing)
+
+    @traced
+    def _translate_dictionary(self, dictionary_path: str) -> TranslateDictionary:
+        """Dictionnaire `translate` du chemin, chargé une seule fois (`_translate_dictionary_factory`)."""
         dictionary = self._translate_dictionaries.get(dictionary_path)
         if dictionary is None:
-            try:
-                dictionary = self._translate_dictionary_factory(dictionary_path)
-            except (OSError, yaml.YAMLError) as exc:
-                logger.debug("dictionnaire translate illisible, ignoré : {} ({})", dictionary_path, exc)
-                return False
+            dictionary = self._translate_dictionary_factory(dictionary_path)
             self._translate_dictionaries[dictionary_path] = dictionary
-        key = resolve_field(doc, parse_field_path(source))
-        value = dictionary.lookup(key) if key is not _MISSING else None
-        if value is None:
-            fallback = options.get("fallback")
-            if fallback is None:
-                return False
-            if isinstance(fallback, str):
-                value = render_template(fallback, doc, now=now, on_missing=on_missing)
-            else:
-                value = fallback
-        assign_field(doc, parse_field_path(target), value)
-        return True
+        return dictionary
 
     @traced
     def _apply_mmdb(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:

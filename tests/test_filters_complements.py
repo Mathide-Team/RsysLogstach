@@ -240,7 +240,7 @@ class TestStepTranslate:
             pytest.param({"i": "1"}, {}, "Uplink", id="trouve"),
             pytest.param({"i": "9"}, {"fallback": "index: %{i}"}, "index: 9", id="fallback-gabarit"),
             pytest.param({"i": "9"}, {"fallback": 0}, 0, id="fallback-non-textuel"),
-            pytest.param({}, {"fallback": "%{i}"}, "", id="source-absente-fallback-vide"),
+            pytest.param({"i": None}, {"fallback": "%{i}"}, "", id="source-nulle-fallback-vide"),
         ],
     )
     def test_dans_un_pipeline_json(self, dico: str, doc: dict, options: dict, attendu) -> None:
@@ -255,7 +255,7 @@ class TestStepTranslate:
 
     def test_step_mal_forme(self) -> None:
         with pytest.raises(ValueError, match="step translate mal formé"):
-            TranslateFilter({"source": "i", "target": "nom"})
+            TranslateFilter({"target": "nom"})  # sans source (un dictionnaire vide en ligne est permis, #119)
 
     @pytest.mark.parametrize("contenu", [None, "a: [1, 2\n"], ids=["absent", "yaml-malforme"])
     def test_dictionnaire_illisible(self, tmp_path: Path, contenu: str | None) -> None:
