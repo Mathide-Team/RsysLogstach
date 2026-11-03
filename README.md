@@ -98,6 +98,8 @@ Fonctions Logstash prises en charge (gabarits `%{...}`, conditions, plugins
 
 Sorties `opensearch` (#126) : `action` (`index`, `create`, `update`, `delete`), `pipeline` et `routing` acceptent des gabarits, par exemple `opensearch { index => "logs" action => "update" document_id => "%{id}" doc_as_upsert => true routing => "%{host}" }`.
 
+Nom de champ contenant des crochets (#124) : avec `--field-reference-escape-style percent`, `%{[map%5Bk%5D]}` lit le champ `map[k]` ; `ampersand` utilise `&#91;` et `&#93;`. Défaut `none`, comme Logstash.
+
 Plugins simples natifs (#120) : `csv`, `cidr`, `prune`, `urldecode`, `uuid`, `syslog_pri`, `truncate` ; par exemple `cidr { address => ["%{ip}"] network => ["10.0.0.0/8"] add_tag => ["interne"] }`. `clone` et `split` restent sans effet.
 
 Un `dissect` qui échoue (source absente ou sans correspondance) ajoute `_dissectfailure` aux `tags`, ou les tags de `tag_on_failure` (#117) ; `convert_datatype => { "port" => "int" }` convertit ensuite les champs extraits.
