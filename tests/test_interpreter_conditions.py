@@ -253,7 +253,7 @@ class TestOptions:
 
     def test_plugin_filter_non_interprete_ignore(self) -> None:
         doc = {"message": "a=1"}
-        assert PipelineInterpreter("filter { grok { match => { } } }").apply(doc) == []
+        assert PipelineInterpreter('filter { ruby { code => "x" } }').apply(doc) == []
         assert doc == {"message": "a=1"}
 
     def test_coerce_literal(self) -> None:

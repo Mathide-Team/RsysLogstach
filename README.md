@@ -28,7 +28,8 @@ rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → Op
 | `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | tracing |
 | `enrichment.py` | Enrichissement dictionnaire + GeoIP | tracing |
 | `filters.py` | `FilterPipeline` (dissect, drop, regex, kv, mutate, geoip, translate, date) | enrichment, templates, tracing, util |
-| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, templates, tracing, util |
+| `grok.py` | `GrokFilter` — plugin `grok` natif, motifs de base Logstash (#112) | templates, tracing, util |
+| `interpreter.py` | `PipelineInterpreter` (`--pipeline-conf` Logstash) | enrichment, filters, grok, templates, tracing, util |
 | `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | tracing |
 | `indexer.py` | `OpenSearchIndexer` (opensearch-py async) | dlq, fingerprint, templates, tracing |
 
@@ -95,6 +96,38 @@ Plugin `kv` natif (#113) : `filter { kv { source => "message" target => "pairs" 
 réutilise le même extracteur que le step `kv` de `--filters` (options
 `include_keys`, `exclude_keys`, `trim_key`, `trim_value`,
 `allow_duplicate_values` comprises ; clé répétée → liste de valeurs).
+
+Les chaînes entre guillemets sont lues brutes, comme Logstash par défaut
+(`config.support_escapes: false`) : `"\d+"` reste `\d+` (#128).
+
+#### `grok` (#112)
+
+```
+filter {
+  grok {
+    match => { "message" => "%{SYSLOGBASE} %{GREEDYDATA:texte}" }
+    # ou plusieurs motifs : { "message" => ["%{IP:client} %{NUMBER:octets:int}", "%{GREEDYDATA:brut}"] }
+  }
+}
+```
+
+- Motifs `%{SYNTAXE}`, `%{SYNTAXE:champ}`, `%{SYNTAXE:champ:int|float}`, champs
+  imbriqués (`%{IP:[client][ip]}`) et groupes nommés `(?<champ>...)`.
+- Bibliothèque de base de Logstash (`USERNAME`, `INT`, `NUMBER`, `WORD`,
+  `NOTSPACE`, `DATA`, `GREEDYDATA`, `QUOTEDSTRING`, `UUID`, `MAC`, `IP`,
+  `IPV4`, `IPV6`, `HOSTNAME`, `IPORHOST`, `URI`, `PATH`, `TIMESTAMP_ISO8601`,
+  `SYSLOGTIMESTAMP`, `SYSLOGBASE`, `HTTPDATE`, `LOGLEVEL`…, 70 motifs).
+- Options : `break_on_match` (vrai), `overwrite`, `tag_on_failure`
+  (`_grokparsefailure`), `patterns_dir` + `patterns_files_glob`,
+  `pattern_definitions`, `keep_empty_captures`, `target`.
+- Sans `overwrite`, une capture vers un champ texte existant donne un
+  tableau `[ancien, nouveau]`, comme Logstash.
+- Différences : moteur `re` de Python (3.11+) au lieu d'Oniguruma — groupes
+  nommés, classes POSIX et `\z` sont traduits ; `named_captures_only`
+  toujours vrai ; `timeout_millis` non appliqué. Un motif invalide ou
+  inconnu est ignoré (journal DEBUG), les autres motifs restent actifs.
+
+Exemple de filtre `json` natif (#115) : `json { source => "message" target => "payload" skip_on_invalid_json => true }`.
 
 ### Index OpenSearch
 
@@ -304,7 +337,7 @@ Le `Makefile` exécute les mêmes commandes que la CI ; le seuil de couverture
 
 RsysLogstach est publié sous **GPL-3.0-or-later**. Le texte officiel de la GPLv3 se trouve dans [`LICENSE`](LICENSE), `pyproject.toml` déclare `license = "GPL-3.0-or-later"`, et chaque fichier de code porte l'en-tête `# SPDX-License-Identifier: GPL-3.0-or-later`.
 
-Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont réimplémentés à partir de la documentation publique. Les dépendances ne sont pas embarquées, et leurs licences sont compatibles avec la GPLv3 :
+Le dépôt ne reprend aucun code de Logstash (Apache-2.0) : les filtres sont réimplémentés à partir de la documentation publique. Seule exception, la bibliothèque des motifs `grok` de base (`patterns/legacy/grok-patterns` de [logstash-patterns-core](https://github.com/logstash-plugins/logstash-patterns-core), Copyright 2012-2015 Elasticsearch, Apache-2.0) est recopiée sans modification dans `src/grok.py`, avec attribution ; le texte de la licence Apache-2.0 et la notice d'origine sont dans [`LICENSES/`](LICENSES/) ; cette licence est compatible avec la GPLv3. Les dépendances ne sont pas embarquées, et leurs licences sont compatibles avec la GPLv3 :
 
 | Dépendance | Licence |
 |---|---|

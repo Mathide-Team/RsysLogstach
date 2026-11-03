@@ -259,6 +259,7 @@ from loguru import logger
 from enrichment import GenericMmdbLookup, GeoIPLookup, TranslateDictionary
 from filters import DateFilter, Dissector, FilterPipeline, KeyValueFilter, apply_common_options, apply_mutate
 from fingerprint import FingerprintFilter
+from grok import GrokFilter
 from i18n import _
 from templates import _MISSING, assign_field, parse_field_path, render_template, resolve_field
 from tracing import traced
@@ -379,6 +380,9 @@ class PipelineInterpreter:
         self._dissect_cache: dict[str, Dissector] = {}
         # #114 : un FingerprintFilter par bloc fingerprint (clé id(entry)).
         self._fingerprint_cache: dict[int, FingerprintFilter | None] = {}
+        # `grok` (#112) : un GrokFilter compilé par jeu d'options rencontré
+        # (motifs développés et regex compilées une seule fois).
+        self._grok_cache: dict[str, GrokFilter] = {}
         # Chargées/ouvertes une seule fois par chemin rencontré dans le
         # pipeline, comme _dissect_cache (session 16, translate/mmdb).
         self._translate_dictionaries: dict[str, TranslateDictionary] = {}
@@ -535,6 +539,10 @@ class PipelineInterpreter:
             self._apply_drop(options)
         elif name == "fingerprint":
             reussi = self._apply_fingerprint(entry, doc, options)
+        elif name == "grok":
+            reussi = self._apply_grok(doc, options)
+        elif name == "json":
+            reussi = self._apply_json(doc, options)
         else:
             logger.debug("plugin filter non interprété (structure seule) : {}", name)
         # #116 : options communes (add_field/add_tag/remove_field/remove_tag)
@@ -584,6 +592,65 @@ class PipelineInterpreter:
             return
         logger.debug("_apply_drop() raising | _DocumentDropped (percentage={})", pourcentage)
         raise _DocumentDropped("drop natif")
+
+    @traced
+    def _apply_grok(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { grok { match => { champ => motif } ... } }` — délègue à `grok.GrokFilter` (#112).
+
+        Compilé une fois par jeu d'options (clé JSON triée), comme
+        `_dissect_cache`. Options, défauts et différences avec Logstash :
+        docstring du module `grok`.
+
+        Returns:
+            True si un motif a correspondu (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        filtre = self._grok_cache.get(cle)
+        if filtre is None:
+            filtre = GrokFilter(options)
+            self._grok_cache[cle] = filtre
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_json(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`json { source target skip_on_invalid_json tag_on_failure }` natif (#115).
+
+        Comme le filtre officiel : source absente, rien ; JSON invalide,
+        `tag_on_failure` (défaut `_jsonparsefailure`) sauf si
+        `skip_on_invalid_json` ; sans `target`, l'objet décodé est fusionné
+        à la racine (un JSON non objet est alors un échec).
+
+        Returns:
+            True si le document a été modifié (options communes, #116).
+        """
+        source = options.get("source")
+        if not isinstance(source, str):
+            logger.warning(_("json ignoré : option source manquante"))
+            return False
+        texte = resolve_field(doc, parse_field_path(source))
+        if texte is _MISSING or texte is None:
+            return False
+        echec = options.get("tag_on_failure", ["_jsonparsefailure"])
+        try:
+            if not isinstance(texte, str):
+                raise TypeError(type(texte).__name__)
+            decode = json.loads(texte)
+        except (ValueError, TypeError) as exc:
+            if options.get("skip_on_invalid_json", False) is not True:
+                add_failure_tags(doc, echec)
+                logger.warning(_("json : analyse impossible du champ {} : {}"), source, exc)
+            return False
+        cible = options.get("target")
+        if isinstance(cible, str):
+            assign_field(doc, parse_field_path(cible), decode)
+        elif isinstance(decode, dict):
+            doc.update(decode)
+        else:
+            add_failure_tags(doc, echec)
+            logger.warning(_("json : un JSON non objet exige l'option target"))
+            return False
+        logger.debug("_apply_json: {} décodé", source)
+        return True
 
     @traced
     def _apply_dissect(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
