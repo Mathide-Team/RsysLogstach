@@ -274,6 +274,7 @@ from templates import _MISSING, assign_field, parse_field_path, render_template,
 from tracing import traced
 from useragent import UserAgentFilter
 from util import add_failure_tags, load_json_file
+from xmlfilter import XmlFilter
 
 _COMPARE_OPS = {"==", "!=", "<=", ">=", "<", ">"}
 _REGEX_OPS = {"=~", "!~"}
@@ -402,6 +403,8 @@ class PipelineInterpreter:
         self._translate_filters: dict[str, TranslateFilter | None] = {}
         # #121 : un UserAgentFilter par jeu d'options (None : bloc ignoré).
         self._useragent_filters: dict[str, UserAgentFilter | None] = {}
+        # #121 : un XmlFilter par jeu d'options (None : bloc ignoré).
+        self._xml_filters: dict[str, XmlFilter | None] = {}
         self._mmdb_lookups: dict[str, GenericMmdbLookup] = {}
         # Idem pour `geoip` (session 21) : une base GeoIP2 City ouverte
         # une seule fois par chemin de fichier rencontré, comme
@@ -561,6 +564,8 @@ class PipelineInterpreter:
             reussi = self._apply_json(doc, options)
         elif name == "useragent":
             reussi = self._apply_useragent(doc, options)
+        elif name == "xml":
+            reussi = self._apply_xml(doc, options)
         elif name in PLUGINS_SIMPLES:
             reussi = PLUGINS_SIMPLES[name](doc, options)
         elif name == "cidr":
@@ -655,6 +660,30 @@ class PipelineInterpreter:
                 filtre = None
             self._useragent_filters[cle] = filtre
         filtre = self._useragent_filters[cle]
+        if filtre is None:
+            return False
+        return filtre.apply(doc)
+
+    @traced
+    def _apply_xml(self, doc: dict[str, Any], options: dict[str, Any]) -> bool:
+        """`filter { xml { source => ... target => ... } }` — délègue à `xmlfilter.XmlFilter` (#121).
+
+        Construit une fois par jeu d'options (clé JSON triée). Options
+        invalides (`target` absent avec `store_xml`, `parse_options` refusé…) :
+        bloc ignoré, tracé, sans nouvel essai.
+
+        Returns:
+            True si une valeur a été extraite (options communes, #116).
+        """
+        cle = json.dumps(options, sort_keys=True, default=str)
+        if cle not in self._xml_filters:
+            try:
+                filtre: XmlFilter | None = XmlFilter(options)
+            except ValueError as exc:
+                logger.debug("plugin xml ignoré : {}", exc)
+                filtre = None
+            self._xml_filters[cle] = filtre
+        filtre = self._xml_filters[cle]
         if filtre is None:
             return False
         return filtre.apply(doc)
