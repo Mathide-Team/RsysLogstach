@@ -15,21 +15,14 @@ le découpage #111 : [FEATURES.md](https://github.com/Mathilde-Team/PyStashTempl
 [référence des formats](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/pipeline-logstash.md),
 [audit des fonctions Logstash](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/audit-fonctions-logstash.md).
 
-### Indexation OpenSearch (module indexer.py)
-- `OpenSearchIndexer` — délègue l'envoi à la sortie `OpenSearchOutput` de PyStashTemplate (#160, API `_bulk`)
-- Authentification via variables d'environnement
-- Template d'index (`opensearch-index-template.json`)
-- Retenue (retry) sur erreurs transitoires (connexion refusée, timeout)
+### Indexation, DLQ, métriques, connexion OpenSearch
 
-### Dead Letter Queue (module dlq.py, session 13)
-- `LocalDeadLetterQueue.write()` — JSONL append-only
-- Uniquement pour erreurs permanentes (RequestError/NotFoundError, 400/404)
-- Jamais pour erreurs transitoires (retenue inchangée)
-- Écriture dans thread séparé (`asyncio.to_thread`)
-- Rotation par taille (`max_bytes`) ou par âge de la plus ancienne entrée (`max_age`), compression gzip, purge par nombre (`backups`) et par âge (`retention`), `parse_size`/`parse_duration` pour les options CLI (issue #27)
-
-### Fingerprint (`--document-id-fingerprint`, session 17)
-- `_id` déterministe calculé par `pystashtemplate.fingerprint` (voir « Indexer » ci-dessous pour les options)
+Branchés par `omprog.py` (`--opensearch-host`, `--index-pattern`,
+`--document-id-template`, `--document-id-fingerprint`, `--dlq-*`,
+`--metrics-port`, blocs `opensearch{}` du `.conf`) ; implémentés et
+documentés dans PyStashTemplate depuis la correction du découpage #111
+(#171) : modules `indexer`, `dlq`, `metrics` et `opensearchconf`,
+[référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md). Le pont garde le préfixe de métriques `rsyslogstach`.
 
 ## Items "Proposé" — Statut
 
@@ -40,8 +33,8 @@ le découpage #111 : [FEATURES.md](https://github.com/Mathilde-Team/PyStashTempl
 
 ## Limites connues
 
-### DLQ (dlq.py)
-- Rotation/purge : options `--dlq-max-size`, `--dlq-max-age`, `--dlq-backups`, `--dlq-retention`, `--dlq-no-compress` de `omprog.py` (issue #27)
+### DLQ
+- Rotation/purge : options `--dlq-max-size`, `--dlq-max-age`, `--dlq-backups`, `--dlq-retention`, `--dlq-no-compress` de `omprog.py` (issue #27), appliquées à `pystashtemplate.dlq.LocalDeadLetterQueue`
 
 ### Bibliothèque (PyStashTemplate)
 - Limites des gabarits, du fingerprint et de l'interpréteur `.conf` : [FEATURES.md de PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/FEATURES.md#limites-connues)
@@ -52,11 +45,10 @@ le découpage #111 : [FEATURES.md](https://github.com/Mathilde-Team/PyStashTempl
 - Sorties `output{}` honorées : `opensearch` et `elasticsearch` (`index`, `document_id`) ; `hosts` du pipeline ignoré (nœuds de `--opensearch-host`)
 - `${VAR}` des pipelines `.conf` non substitués (variables d'environnement Logstash)
 
-### Indexer (indexer.py)
-- Réponse du serveur aux redirections (imprimante/série/parallèle) traitée côté serveur, jamais remontée à l'API
+### Indexation (`pystashtemplate.indexer`)
 - **Multi-nœuds (#37, revu par #160)** : la sortie n'utilise que le premier nœud (avertissement si plusieurs) — l'échec rend le message à rsyslog qui le retient ; plus de failover transport. `health()` (GET /) alimente le health check périodique d'omprog (`--health-check-interval`, défaut 300 s, 0 = désactivé) — un échec journalise un warning, sans jamais interrompre le pont
 - **Fingerprint HMAC/MURMUR3 (#28)** : `--fingerprint-method murmur3` (entier 32 bits via `mmh3`, non cryptographique, format `_id` décimal) ; mode HMAC avec `--fingerprint-key` ou la variable d'environnement `FINGERPRINT_KEY` (clé de déploiement, `_id` incomparables entre clés ; pas de HMAC MURMUR3, comme le filtre Logstash)
-- **`_id` déterministe (#33)** : `--document-id-template` (champ identifiant naturel, lisible) et `--document-id-fingerprint` (hash du contenu, aucun champ naturel) peuvent être configurés **simultanément** — le fingerprint est prioritaire, jamais combinés dans un même `_id` ; sans l'un ni l'autre, `_id` aléatoire (historique). Documentation des cas d'usage dans le README
+- **`_id` déterministe (#33)** : `--document-id-template` (champ identifiant naturel, lisible) et `--document-id-fingerprint` (hash du contenu, aucun champ naturel) peuvent être configurés **simultanément** — le fingerprint est prioritaire, jamais combinés dans un même `_id` ; sans l'un ni l'autre, `_id` aléatoire (historique). Documentation des cas d'usage dans le README et dans la [référence PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#identifiant-de-document-_id)
 
 ## Backlog
 

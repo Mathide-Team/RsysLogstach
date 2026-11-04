@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Ajoute `src/` au sys.path pour que les tests importent les modules
-applicatifs (`templates`, `filters`, `enrichment`, `indexer`, `util`,
-`tracing`) sans installation préalable — motif repris du squelette de
+applicatifs (`omprog`, `i18n`) sans installation préalable — motif repris du squelette de
 Mathilde.
 """
 

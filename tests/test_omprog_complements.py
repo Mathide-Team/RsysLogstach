@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 from conftest import IP_STRASBOURG
 from loguru import logger
+from pystashtemplate.indexer import SendOutcome
 from test_omprog import FakeIndexer, _args, _bridge, _run
 
 import omprog
-from indexer import SendOutcome
 
 ROOT = Path(__file__).resolve().parents[1]
 

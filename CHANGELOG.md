@@ -4,6 +4,28 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+## [0.11.0] - 2026-11-04
+
+### Modifié
+- **Découpage #111 corrigé (#171)** : seul `omprog` (propre à rsyslog)
+  reste dans ce dépôt. `indexer`, `dlq`, `metrics` et `opensearchconf`
+  ont rejoint PyStashTemplate (Mathilde-Team/PyStashTemplate#110) et sont
+  importés de `pystashtemplate.*` ; `src/indexer.py`, `src/dlq.py`,
+  `src/metrics.py`, `src/opensearchconf.py` et leurs tests unitaires
+  (`test_dlq.py`, `test_mtls.py`, parties module de `test_metrics.py` et
+  `test_opensearchconf.py`) sont supprimés — les tests du câblage dans
+  `omprog` restent. Les noms de métriques ne changent pas (préfixe
+  `rsyslogstach`, constante `omprog.METRICS_PREFIX`).
+- Dépendance `pystashtemplate` figée sur `v0.3.0` (au lieu de `v0.2.0`) ;
+  `prometheus-client` n'est plus une dépendance directe (il vient avec
+  PyStashTemplate).
+- `FilterPipeline.apply` est asynchrone depuis PyStashTemplate #36 :
+  `omprog` l'attend (`await`).
+- Documentation : README (tableau des modules, renvois vers
+  `docs/indexation-metriques.md` de PyStashTemplate pour l'index, les
+  métriques, la DLQ, la connexion et l'`_id`), `CLAUDE.md`, `FEATURES.md`,
+  `PATTERNS.md`.
+
 ## [0.10.2] - 2026-11-04
 
 ### Modifié

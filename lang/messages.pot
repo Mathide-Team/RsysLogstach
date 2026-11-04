@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: RsysLogstach\n"
 "Report-Msgid-Bugs-To: https://github.com/Mathilde-Team/RsysLogstach/issues\n"
-"POT-Creation-Date: 2026-11-03 22:21+0000\n"
+"POT-Creation-Date: 2026-11-04 21:53+0000\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -16,21 +16,6 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-
-#: src/indexer.py
-#, python-brace-format
-msgid "Plusieurs nœuds configurés ({hosts}), seul le premier est utilisé"
-msgstr ""
-
-#: src/indexer.py
-#, python-brace-format
-msgid "Indexation OpenSearch échouée définitivement erreur={error}"
-msgstr ""
-
-#: src/metrics.py
-#, python-brace-format
-msgid "Métriques Prometheus sur http://{addr}:{port}/metrics"
-msgstr ""
 
 #: src/omprog.py
 msgid "Pont rsyslog omprog -> OpenSearch, compatible schéma/filtres Logstash."

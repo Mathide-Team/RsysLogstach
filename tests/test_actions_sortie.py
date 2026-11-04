@@ -18,9 +18,9 @@ from typing import Any
 
 import httpx
 import pytest
+from pystashtemplate.indexer import ACTIONS, SendOutcome
 from test_integration import _read_dlq, make_bridge
 
-from indexer import ACTIONS, SendOutcome
 from omprog import _options_envoi
 
 
