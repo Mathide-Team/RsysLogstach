@@ -11,33 +11,38 @@ Pipeline asynchrone en Python qui reçoit les messages syslog via le module `omp
 
 ```
 rsyslog → omprog (asyncio) → [filters] → [enrichment] → [indexer] → OpenSearch
-                                      ↓                        ↓
-                                  blocklist               DLQ (erreurs 4xx)
-                                  geoip                   fingerprint (_id)
+          └ RsysLogstach ┘   └──────── PyStashTemplate v0.3.0 ────────┘
+                                 blocklist      geoip      DLQ (erreurs 4xx)
+                                                           fingerprint (_id)
 ```
 
 ### Modules
 
 | Module | Rôle | Dépendances |
 |--------|------|-------------|
-| `omprog.py` | Point d'entrée asyncio (rsyslog omprog) | tous les modules du connecteur + `pystashtemplate` |
+| `omprog.py` | Point d'entrée asyncio (protocole rsyslog omprog), options de ligne de commande, câblage | `i18n` + `pystashtemplate` |
 | `i18n.py` | Domaine gettext `rsyslogstach` (chaînes du connecteur) | `pystashtemplate.tracing` |
-| `opensearchconf.py` | Connexion OpenSearch lue dans `output { opensearch { … } }` (#125) | `pystashtemplate.tracing` |
-| `dlq.py` | `LocalDeadLetterQueue` — JSONL append-only | `pystashtemplate.tracing` |
-| `metrics.py` | `Metrics` — compteurs, histogrammes et jauges Prometheus, endpoint `/metrics` | i18n, `pystashtemplate.tracing` |
-| `indexer.py` | `OpenSearchIndexer` — délègue à la sortie `OpenSearchOutput` de PyStashTemplate (#160), DLQ et fingerprint locaux | dlq, i18n, `pystashtemplate.fingerprint`, `pystashtemplate.templates`, `pystashtemplate.outputs.opensearch` |
 
-Depuis le découpage #111, la sémantique Logstash partagée vit dans le
-dépôt [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)
-(dépendance figée `v0.2.0`) : `templates` (gabarits `%{field}`), `filters`
-(dissect, drop, regex, kv, mutate, geoip, translate, date), `interpreter`
-(`PipelineInterpreter`, `--pipeline-conf` Logstash), `enrichment`
-(dictionnaire + GeoIP), `grok`, `fingerprint`, `useragent`, `xmlfilter`,
-`multievents`, `dnslookup`, `simples`, `util`, `tracing` — chacun gardant
-son rôle et ses dépendances croissantes documentés dans ce README jusqu'à
-#111. RsysLogstach, lui, reste le connecteur rsyslog : omprog + livraison
-(indexer, dlq) + exploitation (metrics), comme tout autre outil (…beat)
-pourrait s'appuyer sur PyStashTemplate.
+Découpage #111 corrigé (#171, v0.11.0) : seul `omprog`, propre à rsyslog,
+reste dans ce dépôt. Tout le reste vient de
+[PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)
+(dépendance figée `v0.3.0`), utilisable par tout autre outil (service
+autonome, …beat) :
+
+- sémantique Logstash : `templates` (gabarits `%{field}`), `filters`
+  (dissect, drop, regex, kv, mutate, geoip, translate, date), `interpreter`
+  (`PipelineInterpreter`, `--pipeline-conf`), `enrichment` (dictionnaire +
+  GeoIP), `grok`, `fingerprint`, `useragent`, `xmlfilter`, `multievents`,
+  `dnslookup`, `simples`, `util`, `tracing` ;
+- livraison et exploitation : `indexer` (`OpenSearchIndexer`, `_id`,
+  `SendOutcome`), `dlq` (DLQ locale, rotation), `metrics` (Prometheus,
+  préfixe `rsyslogstach` conservé) et `opensearchconf` (options de
+  connexion du `.conf`) — documentés dans
+  [docs/indexation-metriques.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md) ;
+- sorties agnostiques (`outputs`, plus de vingt destinations) : voir
+  [docs/sorties.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/sorties.md).
+  `omprog` n'honore aujourd'hui que les blocs `opensearch{}` /
+  `elasticsearch{}` d'un `--pipeline-conf`.
 
 Le graphe de dépendances est acyclique, vérifié mécaniquement par `tests/test_no_cross_imports.py` (analyse `ast`).
 
@@ -94,7 +99,7 @@ Ce qui relève du connecteur dans un `.conf` :
   sont honorées (`index`, `document_id`) ; `action` (`index`, `create`,
   `update`, `delete`), `pipeline` et `routing` acceptent des gabarits (#126),
   par exemple `opensearch { index => "logs" action => "update" document_id => "%{id}" doc_as_upsert => true routing => "%{host}" }`.
-  Les options de connexion du bloc sont lues par `opensearchconf.py` (#125,
+  Les options de connexion du bloc sont lues par `pystashtemplate.opensearchconf` (#125,
   section « Authentification OpenSearch »).
 - **Plusieurs événements par message** (`clone`, `split`, #141) : chacun est
   indexé selon ses propres sorties ; rsyslog reçoit un échec transitoire si
@@ -162,7 +167,8 @@ toujours vers les nœuds de `--opensearch-host`.
 
 ### Métriques Prometheus (issue #35)
 
-Désactivées par défaut. `--metrics-port 9464` démarre un endpoint `/metrics` sur `127.0.0.1` (`--metrics-addr 0.0.0.0` pour l'exposer au réseau) :
+Module `pystashtemplate.metrics` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#métriques-prometheus-metrics)) ;
+le pont garde le préfixe `rsyslogstach`. Désactivées par défaut. `--metrics-port 9464` démarre un endpoint `/metrics` sur `127.0.0.1` (`--metrics-addr 0.0.0.0` pour l'exposer au réseau) :
 
 | Métrique | Type | Contenu |
 |----------|------|---------|
@@ -176,10 +182,11 @@ Désactivées par défaut. `--metrics-port 9464` démarre un endpoint `/metrics`
 
 ### Rotation de la DLQ (issue #27)
 
-`LocalDeadLetterQueue` sait rotater et purger son fichier JSONL ; tout est
-désactivé par défaut (un seul fichier qui grandit, comme avant).
+`pystashtemplate.dlq.LocalDeadLetterQueue` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#dlq-locale-dlq))
+sait rotater et purger son fichier JSONL ; tout est désactivé par défaut
+(un seul fichier qui grandit, comme avant).
 
-| Paramètre (`dlq.py`) | Option (`omprog.py`) | Effet |
+| Paramètre (`LocalDeadLetterQueue`) | Option (`omprog.py`) | Effet |
 |---|---|---|
 | `max_bytes` | `--dlq-max-size 100M` (`parse_size`) | Rotation avant qu'une écriture dépasse cette taille |
 | `max_age` | `--dlq-max-age 7d` (`parse_duration`) | Rotation quand la plus ancienne entrée dépasse cet âge |
@@ -199,7 +206,8 @@ export OPENSEARCH_PASSWORD=secret
 
 #### Dans le `.conf` (issue #125)
 
-Les options de connexion du plugin
+Lecture assurée par `pystashtemplate.opensearchconf`
+([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#options-de-connexion-du-conf-opensearchconf)). Les options de connexion du plugin
 [logstash-output-opensearch](https://github.com/opensearch-project/logstash-output-opensearch)
 sont lues dans les blocs `opensearch{}` / `elasticsearch{}` de `output{}`,
 y compris dans les branches `if` :
@@ -263,6 +271,7 @@ seulement (`chmod 600`).
 
 ### Identifiant de document (`_id`)
 
+Calculé par `pystashtemplate.indexer` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#identifiant-de-document-_id)).
 Deux mécanismes produisent un `_id` déterministe (idempotence : la
 ré-émission d'un document l'écrase au lieu de le dupliquer) :
 
@@ -353,7 +362,7 @@ Le dépôt ne reprend aucun code de Logstash (Apache-2.0). Depuis le découpage 
 | Dépendance | Licence |
 |---|---|
 | logstash-pipeline-parser 0.0.3 | MIT |
-| pystashtemplate (git, tag `v0.2.0`) | GPL-3.0-or-later |
+| pystashtemplate (git, tag `v0.3.0`) | GPL-3.0-or-later |
 | geoip2, maxminddb | Apache-2.0 |
 | prometheus-client | Apache-2.0 AND BSD-2-Clause |
 | pyyaml, mmh3, loguru | MIT |

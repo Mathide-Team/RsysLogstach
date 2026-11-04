@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Tests des métriques Prometheus (issue #35) : `src/metrics.py` et leur câblage dans `omprog`.
+"""Câblage des métriques Prometheus (issue #35) dans `omprog`.
+
+Le module `Metrics` vit dans PyStashTemplate (`pystashtemplate.metrics`,
+découpage #111 corrigé, #171) où il est testé ; ici, on vérifie que le
+pont l'alimente et garde le préfixe historique `rsyslogstach`.
 
 Sans pytest-asyncio (CLAUDE.md) : `asyncio.run()` direct. L'endpoint HTTP est
 démarré pour de vrai sur un port libre de la boucle locale (port 0).
@@ -7,15 +11,13 @@ démarré pour de vrai sur un port libre de la boucle locale (port 0).
 
 from __future__ import annotations
 
-import urllib.request
-
 from prometheus_client.parser import text_string_to_metric_families
+from pystashtemplate.indexer import SendOutcome
+from pystashtemplate.metrics import Metrics
 from test_omprog import FakeIndexer, _args, _bridge, _run
 from test_omprog_complements import pont_de_test  # noqa: F401 - fixture réutilisée
 
 import omprog
-from indexer import SendOutcome
-from metrics import ERROR_CAUSES, OUTCOMES, Metrics
 
 
 def _valeurs(metrics: Metrics) -> dict[tuple[str, tuple], float]:
@@ -33,78 +35,6 @@ def _issue(metrics: Metrics, outcome: str) -> float:
 
 def _erreur(metrics: Metrics, cause: str) -> float:
     return _valeurs(metrics)[("rsyslogstach_errors_total", (("cause", cause),))]
-
-
-# --- module metrics --------------------------------------------------------
-
-
-def test_series_presentes_a_zero_des_le_depart():
-    metrics = Metrics()
-    valeurs = _valeurs(metrics)
-    assert valeurs[("rsyslogstach_messages_received_total", ())] == 0
-    for outcome in OUTCOMES:
-        assert _issue(metrics, outcome) == 0
-    for cause in ERROR_CAUSES:
-        assert _erreur(metrics, cause) == 0
-    assert valeurs[("rsyslogstach_dlq_size_bytes", ())] == 0
-    assert valeurs[("rsyslogstach_retry_pending", ())] == 0
-    assert valeurs[("rsyslogstach_index_latency_seconds_count", ())] == 0
-
-
-def test_registres_independants():
-    a, b = Metrics(), Metrics()
-    a.message_received("x")
-    assert _valeurs(a)[("rsyslogstach_messages_received_total", ())] == 1
-    assert _valeurs(b)[("rsyslogstach_messages_received_total", ())] == 0
-
-
-def test_taille_des_messages_en_octets_utf8():
-    metrics = Metrics()
-    metrics.message_received("é" * 100)  # 200 octets
-    valeurs = _valeurs(metrics)
-    assert valeurs[("rsyslogstach_message_size_bytes_sum", ())] == 200
-    assert valeurs[("rsyslogstach_message_size_bytes_bucket", (("le", "128.0"),))] == 0
-    assert valeurs[("rsyslogstach_message_size_bytes_bucket", (("le", "256.0"),))] == 1
-
-
-def test_renvois_en_attente_remis_a_zero_par_une_indexation():
-    metrics = Metrics()
-    metrics.outcome("retryable")
-    metrics.outcome("retryable")
-    metrics.outcome("dropped")
-    assert _valeurs(metrics)[("rsyslogstach_retry_pending", ())] == 2
-    metrics.outcome("indexed")
-    assert _valeurs(metrics)[("rsyslogstach_retry_pending", ())] == 0
-    assert _issue(metrics, "retryable") == 2
-
-
-def test_taille_de_la_dlq(tmp_path):
-    dlq = tmp_path / "dlq.jsonl"
-    metrics = Metrics(dlq_path=str(dlq))
-    assert _valeurs(metrics)[("rsyslogstach_dlq_size_bytes", ())] == 0  # fichier pas encore créé
-    dlq.write_text("0123456789", encoding="utf-8")
-    assert _valeurs(metrics)[("rsyslogstach_dlq_size_bytes", ())] == 10
-
-
-def test_endpoint_http_reel():
-    metrics = Metrics()
-    metrics.error("exception")
-    server, thread = metrics.serve(0)
-    try:
-        port = server.server_port
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as reponse:
-            texte = reponse.read().decode("utf-8")
-    finally:
-        server.shutdown()
-        thread.join(timeout=5)
-    assert 'rsyslogstach_errors_total{cause="exception"} 1.0' in texte
-
-
-def test_serve_transmet_adresse_et_registre():
-    appels = []
-    metrics = Metrics()
-    assert metrics.serve(9464, "0.0.0.0", server_factory=lambda *a, **kw: appels.append((a, kw)) or "srv") == "srv"
-    assert appels == [((9464,), {"addr": "0.0.0.0", "registry": metrics.registry})]
 
 
 # --- câblage dans omprog ----------------------------------------------------

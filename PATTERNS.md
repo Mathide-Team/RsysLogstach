@@ -5,7 +5,8 @@ Depuis le découpage #111, les conventions propres à la bibliothèque
 le graphe des modules acyclique : `tracing` feuille, `util.add_failure_tags`,
 `_build_geoip_record`, `fingerprint → templates`) sont dans le
 [PATTERNS.md de PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/PATTERNS.md). Restent ici celles
-du connecteur.
+du connecteur, qui depuis la correction du découpage (#171) se réduit à
+`omprog.py` et `i18n.py`.
 
 ## Traçabilité systématique des fonctions
 
@@ -23,12 +24,12 @@ du connecteur.
 
 ## Tests sans pytest-asyncio
 
-**Convention :** Les tests async utilisent `asyncio.run()` directement, sans dépendance à `pytest-asyncio` (absente de `requirements-dev.txt`). Voir `test_dlq.py`, `test_indexer.py`.
+**Convention :** Les tests async utilisent `asyncio.run()` directement, sans dépendance à `pytest-asyncio` (absente de `requirements-dev.txt`). Voir `test_omprog.py`, `test_integration.py`.
 
 ## Package à plat
 
-**Convention :** `src/*.py` sans `__init__.py`, importé via `sys.path` (voir `conftest.py` et `PYTHONPATH=src` dans le déploiement rsyslog). `pyproject.toml` a `package = false` — `uv` gère uniquement l'environnement sans build PEP 517.
+**Convention :** `src/*.py` sans `__init__.py`, importé via `sys.path` (voir `conftest.py` et `PYTHONPATH=src` dans le déploiement rsyslog). `pyproject.toml` a `package = true` : la roue expose `omprog` et `i18n` au niveau racine (`only-include = ["src"]`).
 
 ## Opérations disque hors boucle asyncio
 
-**Convention :** Les écritures disque se font via `asyncio.to_thread` pour ne jamais bloquer la boucle asyncio d'`omprog` (motif introduit session 4, repris par `dlq.py` session 13).
+**Convention :** Les écritures disque se font via `asyncio.to_thread` pour ne jamais bloquer la boucle asyncio d'`omprog` (motif introduit session 4, repris par `pystashtemplate.dlq`).

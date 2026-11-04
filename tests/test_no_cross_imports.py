@@ -6,8 +6,8 @@ règle documentée dans PATTERNS.md, « Absence de dépendances circulaires
 entre modules » : le graphe des imports internes ne doit contenir aucun
 cycle.
 
-Depuis le découpage #111, `src/` ne contient plus que le connecteur
-(omprog, indexer, dlq, metrics, opensearchconf) : les invariants de la
+Depuis le découpage #111 corrigé (#171), `src/` ne contient plus que le
+connecteur rsyslog (`omprog`, et son `i18n`) : les invariants de la
 bibliothèque (tracing feuille, util/enrichment/i18n…) sont vérifiés dans
 PyStashTemplate. Ici, on vérifie en plus que le connecteur ne dépend
 que de lui-même et du paquet `pystashtemplate` — et qu'aucun module de
@@ -35,6 +35,11 @@ MODULES_BIBLIOTHEQUE = {
     "simples",
     "filters",
     "interpreter",
+    # Découpage #111 corrigé (#171) : passés dans PyStashTemplate.
+    "dlq",
+    "indexer",
+    "metrics",
+    "opensearchconf",
 }
 # Exception #111 : chaque dépôt garde SON module i18n (domaine gettext propre) ;
 # celui de RsysLogstach traduit les chaînes du connecteur.
@@ -48,7 +53,7 @@ def _imports_of(module_name: str) -> set[str]:
         if isinstance(node, ast.Import):
             internal.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
-            # `from dlq import ...` → dlq ; `from pystashtemplate.X import ...`
+            # `from i18n import ...` → i18n ; `from pystashtemplate.X import ...`
             # → pystashtemplate.X (hors périmètre de ce graphe).
             internal.add(node.module)
     return internal & set(MODULES)
@@ -80,8 +85,7 @@ def test_src_ne_contient_que_le_connecteur() -> None:
     # aucun ne doit revenir (ni exister encore) dans src/.
     restants = set(MODULES) & MODULES_BIBLIOTHEQUE
     assert restants == set(), f"modules bibliothèque encore présents dans src/ : {restants}"
-    for attendu in ("omprog.py", "indexer.py", "dlq.py", "metrics.py", "opensearchconf.py"):
-        assert (SRC / attendu).is_file(), f"{attendu} manque dans src/"
+    assert set(MODULES) == {"i18n", "omprog"}, f"src/ ne doit contenir que omprog et i18n : {MODULES}"
 
 
 def test_bibliotheque_importee_via_le_paquet() -> None:

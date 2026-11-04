@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Issue #40 : les modules du connecteur s'importent avec les dépendances du
 projet, sans réseau ni OpenSearch — et, depuis le découpage #111, avec la
-bibliothèque PyStashTemplate (dépendance figée v0.1.0)."""
+bibliothèque PyStashTemplate (dépendance figée). Découpage corrigé (#171) :
+seuls `omprog` et `i18n` restent dans `src/` ; indexer, dlq, metrics et
+opensearchconf viennent du paquet."""
 
 from __future__ import annotations
 
@@ -10,7 +12,7 @@ import importlib
 import pytest
 
 
-@pytest.mark.parametrize("module", ["dlq", "indexer", "metrics", "omprog", "opensearchconf"])
+@pytest.mark.parametrize("module", ["i18n", "omprog"])
 def test_import(module):
     assert importlib.import_module(module)
 
@@ -18,10 +20,14 @@ def test_import(module):
 @pytest.mark.parametrize(
     "module",
     [
+        "pystashtemplate.dlq",
         "pystashtemplate.dnslookup",
         "pystashtemplate.enrichment",
         "pystashtemplate.filters",
+        "pystashtemplate.indexer",
         "pystashtemplate.interpreter",
+        "pystashtemplate.metrics",
+        "pystashtemplate.opensearchconf",
         "pystashtemplate.templates",
     ],
 )

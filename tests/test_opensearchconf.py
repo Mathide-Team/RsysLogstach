@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 from pystashtemplate.interpreter import PipelineInterpreter
+from pystashtemplate.opensearchconf import apply_connection_options, conf_auth
 
 import omprog
-from opensearchconf import apply_connection_options, collect_connection_options, conf_auth, conf_host_urls
 
 
 class FakeIndexer:
@@ -85,58 +85,6 @@ def test_sans_bloc_opensearch_defaut_inchange(tmp_path):
 def test_no_verify_certs_cli_reste_actif(tmp_path):
     kw = _bridge(tmp_path, "output { opensearch { ssl_certificate_verification => true } }", "--no-verify-certs")
     assert kw.kwargs["verify_certs"] is False
-
-
-def test_booleen_en_chaine():
-    assert collect_connection_options([("opensearch", {"ssl": "TRUE", "ssl_certificate_verification": "false"})]) == {
-        "ssl": True,
-        "ssl_certificate_verification": False,
-    }
-
-
-@pytest.mark.parametrize(
-    ("options", "message"),
-    [
-        ({"ssl": "oui"}, "true ou false"),
-        ({"hosts": []}, "liste d'URLs"),
-        ({"hosts": [1]}, "liste d'URLs"),
-        ({"cacert": ""}, "chaîne non vide"),
-        ({"user": "u"}, "vont ensemble"),
-        ({"password": "p"}, "vont ensemble"),
-        ({"hosts": ["${OS_HOST}"]}, "non remplacée"),
-        ({"password": "${PW}", "user": "u"}, "non remplacée"),
-    ],
-)
-def test_options_invalides(options, message):
-    with pytest.raises(ValueError, match=message):
-        collect_connection_options([("opensearch", options)])
-
-
-def test_blocs_contradictoires_refuses():
-    with pytest.raises(ValueError, match="différente"):
-        collect_connection_options([("opensearch", {"hosts": "a"}), ("elasticsearch", {"hosts": ["b"]})])
-
-
-def test_blocs_identiques_et_autres_plugins_acceptes():
-    plugins = [
-        ("opensearch", {"hosts": "a", "index": "x"}),
-        ("stdout", {"hosts": "z"}),
-        ("opensearch", {"hosts": ["a"]}),
-    ]
-    assert collect_connection_options(plugins) == {"hosts": ["a"]}
-
-
-def test_ssl_contredit_le_schema():
-    with pytest.raises(ValueError, match="https"):
-        conf_host_urls({"hosts": ["https://a"], "ssl": False})
-    with pytest.raises(ValueError, match="http://"):
-        conf_host_urls({"hosts": ["http://a"], "ssl": True})
-
-
-def test_urls_normalisees():
-    assert conf_host_urls({}) is None
-    assert conf_host_urls({"hosts": ["//a:1", "b", "HTTP://c"]}) == ["http://a:1", "http://b", "HTTP://c"]
-    assert conf_host_urls({"hosts": ["//a"], "ssl": True}) == ["https://a"]
 
 
 def test_conf_auth_et_apply_sans_options():
