@@ -4,6 +4,24 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+### Modifié
+- **Documentation réduite au connecteur (#111, question du 03/11)** : la
+  documentation de la sémantique Logstash a rejoint le code dans
+  PyStashTemplate (Mathilde-Team/PyStashTemplate#57) — référence des
+  filtres et des `.conf` du README (translate, grok, useragent, xml, dns,
+  clone/split…), audit des fonctions (`docs/audit-fonctions-logstash.md`
+  devient un renvoi), sections bibliothèque de `FEATURES.md` et
+  `PATTERNS.md`. `CLAUDE.md` décrit les modules réellement présents dans
+  `src/` (omprog, i18n, opensearchconf, dlq, metrics, indexer) et leur
+  graphe. Le README garde ce qui relève du connecteur : options
+  `--filters`/`--enrich-dict`/`--geoip-db`/`--pipeline-conf`, sorties
+  `opensearch`, plusieurs événements par message, `${VAR}`,
+  `--field-reference-escape-style`.
+
+### Supprimé
+- `LICENSES/` (Apache-2.0, notice logstash-patterns-core) : les motifs
+  grok sont partis dans PyStashTemplate, qui porte désormais la notice.
+
 ## [0.10.1] - 2026-11-03
 
 ### Ajouté
