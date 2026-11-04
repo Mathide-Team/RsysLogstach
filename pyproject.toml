@@ -1,6 +1,6 @@
 [project]
 name = "rsyslogstach"
-version = "0.10.1"
+version = "0.10.2"
 description = "Pont rsyslog -> omprog (asyncio) -> OpenSearch, compatible schéma/filtres Logstash"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
