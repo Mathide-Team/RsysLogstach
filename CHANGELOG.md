@@ -4,6 +4,19 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+### Documentation
+- README recentré sur le connecteur rsyslog (#174) : ce qui est générique
+  (filtres, `.conf`, indexation, DLQ, métriques, internationalisation,
+  licences des dépendances) renvoie au README et à la documentation de
+  PyStashTemplate (Mathilde-Team/PyStashTemplate#117) ; exemple
+  `rsyslog.conf` avec la commande installée, prérequis, section « Suivi »
+  réécrite (elle datait des issues #25-#38).
+
+### Corrigé
+- `requirements.txt` listait encore `opensearch-py` et les dépendances de
+  la bibliothèque, sans `pystashtemplate` : il reprend désormais les deux
+  dépendances de `pyproject.toml` (`loguru`, `pystashtemplate@v0.3.0`).
+
 ## [0.11.0] - 2026-11-04
 
 ### Modifié
