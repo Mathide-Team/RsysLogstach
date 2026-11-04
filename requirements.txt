@@ -1,6 +1,4 @@
+# Mêmes dépendances que pyproject.toml (#174) : tout le reste arrive par
+# PyStashTemplate, figé sur son tag.
 loguru>=0.7
-opensearch-py[async]
-geoip2
-maxminddb
-pyyaml
-logstash-pipeline-parser==0.0.3
+pystashtemplate @ git+https://github.com/Mathilde-Team/PyStashTemplate.git@v0.3.0
