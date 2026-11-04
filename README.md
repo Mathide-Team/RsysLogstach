@@ -2,7 +2,9 @@
 
 **Pont rsyslog → omprog (asyncio) → OpenSearch, compatible schéma/filtres Logstash.**
 
-Pipeline asynchrone en Python qui reçoit les messages syslog via le module `omprog` de rsyslog, applique des filtres et un enrichissement, puis indexe dans OpenSearch — avec Dead Letter Queue pour les échecs permanents et fingerprint déterministe pour l'idempotence.
+Connecteur asynchrone en Python : il reçoit les messages syslog par le module `omprog` de rsyslog et les confie à [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate), la bibliothèque qui porte toute la sémantique Logstash (filtres, enrichissement, pipelines `.conf`, indexation OpenSearch, DLQ, `_id` déterministe, métriques). Ce dépôt ne garde que ce qui est propre à rsyslog : le protocole `omprog`, les options de ligne de commande et le câblage.
+
+Pour tout ce qui n'est pas rsyslog (format des filtres, écriture d'un `.conf`, sorties, internationalisation, API Python), la référence est le [README de PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate#readme).
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://python.org)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
@@ -49,16 +51,24 @@ Le graphe de dépendances est acyclique, vérifié mécaniquement par `tests/tes
 ## Installation
 
 ```bash
-uv sync                    # environnement isolé
-pip install -r requirements.txt  # ou installation classique
+uv sync                          # environnement isolé (uv.lock)
+pip install .                    # installe la commande `rsyslogstach`
+pip install -r requirements.txt  # dépendances seules, pour l'extraction sans installation
 ```
 
-### Dépendances système
+Deux dépendances directes seulement : `loguru` et `pystashtemplate`, figée
+sur le tag `v0.3.0` (`pyproject.toml`, `requirements.txt`). Les
+dépendances de PyStashTemplate (aiohttp, geoip2, logstash-pipeline-parser,
+prometheus-client…) arrivent avec elle. `requirements-dev.txt` ajoute
+pytest, pytest-cov, mmdb-writer et ruff.
 
-- Python >= 3.11
-- OpenSearch (cluster)
-- MaxMind GeoIP2 Database (pour le filtre geoip)
-- rsyslog avec module omprog
+### Prérequis système
+
+- Python >= 3.11 ;
+- rsyslog avec le module `omprog` ;
+- un cluster OpenSearch (ou Elasticsearch compatible `_bulk`) ;
+- facultatif : base MaxMind GeoIP2 City (`--geoip-db`) ;
+- facultatif, pour les traductions : gettext (`apt-get install gettext`).
 
 ## Configuration
 
@@ -67,10 +77,16 @@ pip install -r requirements.txt  # ou installation classique
 ```conf
 module(load="omprog")
 action(type="omprog"
-    binary="/path/to/src/omprog.py"
+    binary="/usr/local/bin/rsyslogstach --filters /etc/omprog/filters.json --pipeline-conf /etc/omprog/pipeline.d/ --opensearch-host https://localhost:9200 --dlq-path /var/log/rsyslogstach/dlq.jsonl"
     confirmMessages="on"
     template="RSYSLOG_DebugFormat")
 ```
+
+`confirmMessages="on"` est indispensable : c'est la réponse `OK` / `Erreur`
+du connecteur (voir « Protocole omprog ») qui dit à rsyslog de confirmer ou
+de renvoyer un message. Les variables d'environnement (`OPENSEARCH_USER`,
+`OPENSEARCH_PASSWORD`, `FINGERPRINT_KEY`, `LANGUAGE`…) se passent par
+l'environnement du service rsyslog.
 
 ### Filtres, enrichissement et pipelines
 
@@ -167,8 +183,8 @@ toujours vers les nœuds de `--opensearch-host`.
 
 ### Métriques Prometheus (issue #35)
 
-Module `pystashtemplate.metrics` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#métriques-prometheus-metrics)) ;
-le pont garde le préfixe `rsyslogstach`. Désactivées par défaut. `--metrics-port 9464` démarre un endpoint `/metrics` sur `127.0.0.1` (`--metrics-addr 0.0.0.0` pour l'exposer au réseau) :
+Fournies par `pystashtemplate.metrics` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#métriques-prometheus-metrics)) ;
+le connecteur les crée avec le préfixe `rsyslogstach` (`METRICS_PREFIX`), les noms restent donc ceux d'avant le découpage. Désactivées par défaut. `--metrics-port 9464` démarre un endpoint `/metrics` sur `127.0.0.1` (`--metrics-addr 0.0.0.0` pour l'exposer au réseau) :
 
 | Métrique | Type | Contenu |
 |----------|------|---------|
@@ -182,20 +198,19 @@ le pont garde le préfixe `rsyslogstach`. Désactivées par défaut. `--metrics-
 
 ### Rotation de la DLQ (issue #27)
 
-`pystashtemplate.dlq.LocalDeadLetterQueue` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#dlq-locale-dlq))
-sait rotater et purger son fichier JSONL ; tout est désactivé par défaut
-(un seul fichier qui grandit, comme avant).
+Les messages en échec permanent sont écrits par `pystashtemplate.dlq.LocalDeadLetterQueue`
+([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#dlq-locale-dlq)),
+activée par `--dlq-path`. Rotation et purge sont désactivées par défaut :
 
-| Paramètre (`LocalDeadLetterQueue`) | Option (`omprog.py`) | Effet |
+| Option | Exemple | Effet |
 |---|---|---|
-| `max_bytes` | `--dlq-max-size 100M` (`parse_size`) | Rotation avant qu'une écriture dépasse cette taille |
-| `max_age` | `--dlq-max-age 7d` (`parse_duration`) | Rotation quand la plus ancienne entrée dépasse cet âge |
-| `backups` | `--dlq-backups 10` | Fichiers rotatés conservés au maximum |
-| `retention` | `--dlq-retention 30d` (`parse_duration`) | Âge maximal d'un fichier rotaté |
-| `compress` | `--dlq-no-compress` | Fichiers rotatés en gzip (défaut) |
+| `--dlq-max-size` | `100M` | Rotation avant qu'une écriture dépasse cette taille |
+| `--dlq-max-age` | `7d` | Rotation quand la plus ancienne entrée dépasse cet âge |
+| `--dlq-backups` | `10` | Fichiers rotatés conservés au maximum |
+| `--dlq-retention` | `30d` | Âge maximal d'un fichier rotaté |
+| `--dlq-no-compress` | — | Fichiers rotatés non compressés (gzip par défaut) |
 
-Fichiers rotatés : `dlq.jsonl.20261010T120000Z.gz` (puis `-1`, `-2`... dans
-la même seconde), relisibles avec `zcat`.
+Fichiers rotatés : `dlq.jsonl.20261010T120000Z.gz`, relisibles avec `zcat`.
 
 ### Authentification OpenSearch
 
@@ -271,76 +286,39 @@ seulement (`chmod 600`).
 
 ### Identifiant de document (`_id`)
 
-Calculé par `pystashtemplate.indexer` ([référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#identifiant-de-document-_id)).
-Deux mécanismes produisent un `_id` déterministe (idempotence : la
-ré-émission d'un document l'écrase au lieu de le dupliquer) :
+Calculé par `pystashtemplate.indexer`, dont la [référence](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md#identifiant-de-document-_id)
+détaille les algorithmes. Côté connecteur :
 
-| Mécanisme | Option | Cas d'usage |
-|-----------|--------|-------------|
-| **Gabarit** | `--document-id-template "%{[event_id]}"` | Le document possède un champ identifiant naturel (n° d'événement, clé unique) — lisible et traçable dans OpenSearch |
-| **Fingerprint** | `--document-id-fingerprint "host,seq"` (ou `*` pour le document entier) | Aucun champ identifiant naturel — hash du contenu (`sha256` par défaut, `sha1`/`md5`, ou `murmur3` : entier 32 bits, non cryptographique), comme le filtre `fingerprint` de Logstash |
+| Option | Effet |
+|---|---|
+| `--document-id-template "%{[event_id]}"` | `_id` tiré d'un champ identifiant naturel |
+| `--document-id-fingerprint "host,seq"` (ou `*`) | `_id` = empreinte du contenu (`sha256` par défaut, `sha1`, `md5`, `murmur3`), prioritaire sur le gabarit |
+| `--fingerprint-key` / `FINGERPRINT_KEY` | Mode HMAC : empreinte dépendant d'une clé secrète (pas avec `murmur3`) |
 
-Les deux peuvent être configurés **simultanément** (issue #33) : le
-fingerprint est alors prioritaire — ils ne sont jamais combinés dans un
-même `_id`. Ni l'un ni l'autre (défaut), ou rendu vide pour un document :
-OpenSearch génère un `_id` aléatoire (comportement historique).
-
-**Mode HMAC** (issue #28) : `--fingerprint-key` (ou la variable
-d'environnement `FINGERPRINT_KEY`) fait dépendre l'empreinte d'une clé
-secrète — deux déploiements avec des clés différentes produisent des
-`_id` incomparables. Combinable avec `sha256`/`sha1`/`md5` (pas avec
-`murmur3`).
+Sans aucune de ces options, ou si le `_id` calculé est vide, OpenSearch
+génère un `_id` aléatoire. Un `_id` déterministe rend la ré-émission par
+rsyslog idempotente : le document est écrasé, pas dupliqué.
 
 ## Traductions
 
 Les journaux de niveau `info` et au-dessus et l'aide de la ligne de
-commande passent par gettext (issue #38, domaine `rsyslogstach`). Le
-français est la langue source ; la langue suit l'environnement, comme pour
-tout programme gettext (`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) :
+commande passent par gettext, domaine `rsyslogstach` (issue #38) ; les
+messages venus de la bibliothèque utilisent le domaine `pystashtemplate`.
+Le français est la langue source ; la langue suit l'environnement
+(`LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, `LANG`) :
 
 ```bash
-LANGUAGE=en_US python3 src/omprog.py --help
+LANGUAGE=en_US rsyslogstach --help
 ```
 
-Côté rsyslog, la variable se passe au programme par l'environnement du
-service. Les traces `debug`/`trace` restent en français.
-
-| Fichier | Rôle |
-|---|---|
-| `lang/LINGUAS` | seule liste des 29 langues |
-| `lang/messages.pot` | modèle extrait des sources (`xgettext`) |
-| `lang/<locale>.po` | une traduction par langue |
-| `lang/locale/<locale>/LC_MESSAGES/rsyslogstach.mo` | catalogues compilés, suivis par git et installés par la roue dans `<prefix>/share/locale` |
-
 Catalogues cherchés : `$RSYSLOGSTACH_LOCALEDIR`, puis `lang/locale/` du
-dépôt, `<prefix>/share/locale` et `/usr/share/locale`.
-
-**Modifier une chaîne ou en ajouter une** : l'entourer de `_()` (`from
-i18n import _`), en gardant les champs `{...}` de loguru, puis lancer
-`scripts/i18n-update.sh` (gettext requis : `apt-get install gettext`) et
-committer `lang/`. Les traductions existantes sont conservées par
-`msgmerge` ; les nouvelles chaînes arrivent avec `msgstr ""`, sans
-traduction automatique.
-
-**Traduire** : remplir les `msgstr` de `lang/<locale>.po` en conservant les
-champs `{...}` et les `%%`, retirer la marque `fuzzy` après relecture,
-puis relancer `scripts/i18n-update.sh` (recompile le `.mo`).
-
-**Ajouter une langue** : ajouter son code à `lang/LINGUAS`, lancer
-`scripts/i18n-update.sh` (crée `lang/<code>.po`), traduire, relancer.
-Aucun code ni `pyproject.toml` à modifier.
-
-Contrôles :
-
-- `scripts/i18n-update.sh --check` (job « i18n » de la CI) : `.pot` à jour
-  avec les sources, `.po` synchronisés, `msgfmt --check`, `.mo` à jour ;
-- `scripts/i18n_report.py` : taux de traduction par langue (aussi dans le
-  résumé du job) ;
-- `tests/test_i18n.py` : chaînes utilisateur marquées, catalogues valides.
-
-Le workflow `i18n.yml` régénère les catalogues après chaque push sur dev
-qui change des chaînes et propose une PR (branche
-`chore/i18n-catalogues`).
+dépôt, `<prefix>/share/locale` et `/usr/share/locale`. Les fichiers
+(`lang/LINGUAS`, `lang/messages.pot`, `lang/<locale>.po`, `.mo` compilés)
+et la marche à suivre pour modifier une chaîne, traduire ou ajouter une
+langue sont les mêmes que dans PyStashTemplate : voir la section
+« Internationalisation » de son [README](https://github.com/Mathilde-Team/PyStashTemplate#readme). Ici, on marque les
+chaînes avec `from i18n import _`, puis `scripts/i18n-update.sh` ;
+`scripts/i18n-update.sh --check` est le job « i18n » de la CI.
 
 ## Tests
 
@@ -351,31 +329,31 @@ make fmt         # ruff format --check .
 ```
 
 Le `Makefile` exécute les mêmes commandes que la CI ; le seuil de couverture
-(95 %) n'est déclaré que dans `pyproject.toml`.
+(95 %) n'est déclaré que dans `pyproject.toml`. La CI lance aussi
+`scripts/i18n-update.sh --check` ; `tests/test_loguru_regles.py` exécute
+`scripts/audit_debug_sorties.py` (traces `debug` à l'entrée et à la sortie
+des fonctions). Les tests des
+filtres, du `.conf`, de l'indexation et de la DLQ vivent dans
+PyStashTemplate ; ceux d'ici couvrent le protocole `omprog`, les options et
+le câblage, `tests/test_no_cross_imports.py` vérifiant que le connecteur
+ne dépend que de lui-même et du paquet `pystashtemplate`, sans copie de ses modules.
 
 ## Licence
 
 RsysLogstach est publié sous **GPL-3.0-or-later**. Le texte officiel de la GPLv3 se trouve dans [`LICENSE`](LICENSE), `pyproject.toml` déclare `license = "GPL-3.0-or-later"`, et chaque fichier de code porte l'en-tête `# SPDX-License-Identifier: GPL-3.0-or-later`.
 
-Le dépôt ne reprend aucun code de Logstash (Apache-2.0). Depuis le découpage #111, les filtres et la bibliothèque des motifs `grok` de base (logstash-patterns-core, Apache-2.0, avec sa notice) vivent dans [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate), dépendance non embarquée. Les dépendances directes et transitives ont des licences compatibles avec la GPLv3 :
+Le dépôt ne reprend aucun code de Logstash (Apache-2.0). Les filtres et les motifs `grok` de base (logstash-patterns-core, Apache-2.0, avec sa notice) vivent dans PyStashTemplate, dépendance non embarquée. Dépendances directes :
 
 | Dépendance | Licence |
 |---|---|
-| logstash-pipeline-parser 0.0.3 | MIT |
 | pystashtemplate (git, tag `v0.3.0`) | GPL-3.0-or-later |
-| geoip2, maxminddb | Apache-2.0 |
-| prometheus-client | Apache-2.0 AND BSD-2-Clause |
-| pyyaml, mmh3, loguru | MIT |
-| ua-parser, ua-parser-builtins | Apache-2.0 |
-| lxml | BSD-3-Clause |
-| dnspython | ISC |
+| loguru | MIT |
+
+Les licences des dépendances de PyStashTemplate, toutes compatibles avec la GPLv3, sont listées dans la section « Licence » de son [README](https://github.com/Mathilde-Team/PyStashTemplate#licence).
 
 ## Suivi
 
-- **Sessions :** Issues #1–#24 (fermées)
-- **Fait depuis :** #25 (modules + tests), #26 (ce README), #29 (null vs absent), #30 (intégration), #32 (fichiers de suivi), #37 (failover + health check)
-- **Travaux restants :** Issues #28, #31, #33–#35, #38 (liste à jour dans les issues du dépôt et le backlog de FEATURES.md)
-- **FEATURES.md :** Statut des fonctionnalités du connecteur et backlog
-- **PATTERNS.md :** Conventions du connecteur
-- **CLAUDE.md :** Contexte projet et historique
-- **Bibliothèque** (filtres, gabarits, `.conf`) : [FEATURES.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/FEATURES.md), [PATTERNS.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/PATTERNS.md) et [issues](https://github.com/Mathilde-Team/PyStashTemplate/issues) de PyStashTemplate
+- Version et historique : [CHANGELOG.md](CHANGELOG.md), [releases](https://github.com/Mathilde-Team/RsysLogstach/releases).
+- Travaux du connecteur : [issues de RsysLogstach](https://github.com/Mathilde-Team/RsysLogstach/issues) ; statut et backlog dans [FEATURES.md](FEATURES.md), conventions dans [PATTERNS.md](PATTERNS.md).
+- Tout ce qui relève de la sémantique Logstash, des sorties, de l'indexation, de la DLQ et des métriques se suit dans les [issues de PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate/issues) ; les issues correspondantes de ce dépôt y ont été transférées lors du découpage (#111, #171).
+- Mise à jour de la bibliothèque : changer le tag dans `pyproject.toml` et `requirements.txt`, puis `uv lock`.
