@@ -38,7 +38,7 @@ Sources possibles :
   conservé pour la compatibilité des requêtes et tableaux de bord existants.
 - **Logstash** : champ de l'événement Logstash, conservé pour la
   compatibilité de schéma avec l'ancienne chaîne rsyslog → Logstash.
-- **filtre** / **enrichment** : ajouté par `filters.py` ou `enrichment.py`.
+- **filtre** / **enrichment** : ajouté par les filtres ou l'enrichissement de PyStashTemplate (`pystashtemplate.filters`, `pystashtemplate.enrichment`).
 
 ### Champs déclarés
 
@@ -73,7 +73,7 @@ Sources possibles :
 | `iut` | `keyword` | rsyslog (propriété) | InfoUnitType MonitorWare (rarement renseigné) |
 | `pri` | `integer` | rsyslog (propriété) | Valeur PRI brute (facilité × 8 + sévérité) |
 | `rawmsg-after-pri` | `text` | rsyslog (propriété) | Message brut reçu, PRI retiré |
-| `geoip` | `object` (dynamique) | filtre | Résultat du filtre `geoip` (`filters.py`, GeoIP2/MaxMind) |
+| `geoip` | `object` (dynamique) | filtre | Résultat du filtre `geoip` (`pystashtemplate.filters`, GeoIP2/MaxMind) |
 | `geoip.ip` | `ip` | filtre | Adresse géolocalisée |
 | `geoip.location` | `geo_point` | filtre | Position, pour les cartes et les requêtes `geo_distance` |
 | `geoip.latitude` | `half_float` | filtre | Latitude ; `half_float` arrondit à environ 0,03° vers 45°, utiliser `geoip.location` pour la précision |
