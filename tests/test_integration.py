@@ -33,8 +33,8 @@ from typing import Any
 import httpx
 import pytest
 from loguru import logger
+from pystashtemplate.indexer import OpenSearchIndexer, SendOutcome
 
-from indexer import OpenSearchIndexer, SendOutcome
 from omprog import ACK_OK, ACK_RETRY, build_bridge, build_parser, health_check_loop
 
 

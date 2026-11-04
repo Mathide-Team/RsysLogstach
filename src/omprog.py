@@ -29,8 +29,14 @@ l'autorité du cluster, mêmes noms que le plugin logstash-output-opensearch ;
 ces fichiers sont des chemins, pas des secrets en clair.
 
 Ces options peuvent aussi venir du bloc `opensearch{}` du `.conf` (#125,
-`opensearchconf`) : la ligne de commande et l'environnement restent
-prioritaires.
+`pystashtemplate.opensearchconf`) : la ligne de commande et l'environnement
+restent prioritaires.
+
+Découpage #111 corrigé (#171) : `omprog` est le seul module propre à
+rsyslog. L'indexation (`pystashtemplate.indexer`), la DLQ
+(`pystashtemplate.dlq`), les métriques (`pystashtemplate.metrics`, préfixe
+`rsyslogstach` conservé) et les options de connexion
+(`pystashtemplate.opensearchconf`) viennent de PyStashTemplate.
 """
 
 from __future__ import annotations
@@ -49,26 +55,36 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from loguru import logger
+from pystashtemplate.dlq import LocalDeadLetterQueue, parse_duration, parse_size
 from pystashtemplate.enrichment import DictEnricher, GeoIPEnricher
 from pystashtemplate.filters import FilterPipeline
+from pystashtemplate.indexer import OpenSearchIndexer, SendOutcome
 from pystashtemplate.interpreter import PipelineInterpreter
+from pystashtemplate.metrics import Metrics
+from pystashtemplate.opensearchconf import (
+    INDEX_PLUGINS,
+    apply_connection_options,
+    collect_connection_options,
+    conf_auth,
+)
 from pystashtemplate.templates import ESCAPE_STYLES, set_escape_style
 from pystashtemplate.tracing import traced
 from pystashtemplate.util import load_json_file, opensearch_auth_from_env
 
-from dlq import LocalDeadLetterQueue, parse_duration, parse_size
 from i18n import _
-from indexer import OpenSearchIndexer, SendOutcome
-from metrics import Metrics
-from opensearchconf import apply_connection_options, collect_connection_options, conf_auth
 
 ACK_OK = "OK"
 # Toute réponse autre que « OK » est un échec pour rsyslog : il suspend
 # l'action puis renvoie le message. Le texte est journalisé par rsyslog.
 ACK_RETRY = "Erreur : indexation OpenSearch temporairement impossible, message à renvoyer"
 
-# Plugins `output {}` d'un pipeline `.conf` que ce pont sait honorer.
-_INDEX_PLUGINS = frozenset({"opensearch", "elasticsearch"})
+# Plugins `output {}` d'un pipeline `.conf` que ce pont sait honorer
+# (définis par `pystashtemplate.opensearchconf`, découpage #111 corrigé, #171).
+_INDEX_PLUGINS = INDEX_PLUGINS
+
+# Préfixe historique des métriques du pont (#35), conservé depuis que
+# `Metrics` vit dans PyStashTemplate (préfixe `pystashtemplate` par défaut).
+METRICS_PREFIX = "rsyslogstach"
 
 DEFAULT_INDEX_PATTERN = "switch-logs-%Y.%m.%d"
 DEFAULT_INDEX_TEMPLATE_NAME = "switch-logs"
@@ -273,7 +289,7 @@ class Bridge:
     interpreter: PipelineInterpreter | None = None
     pipeline_on_missing: str = "keep"
     dlq: LocalDeadLetterQueue | None = None
-    metrics: Metrics = field(default_factory=Metrics)
+    metrics: Metrics = field(default_factory=lambda: Metrics(prefixe=METRICS_PREFIX))
 
     @traced
     async def handle_line(self, line: str) -> str:
@@ -303,7 +319,8 @@ class Bridge:
     @traced
     async def handle_doc(self, doc: dict[str, Any]) -> SendOutcome | None:
         """Filtres, enrichissement, pipeline, indexation. `None` : document abandonné (drop) ou sans sortie."""
-        if self.filters is not None and not self.filters.apply(doc, on_missing=self.filters_on_missing):
+        # FilterPipeline.apply est asynchrone depuis PyStashTemplate #36 (v0.3.0).
+        if self.filters is not None and not await self.filters.apply(doc, on_missing=self.filters_on_missing):
             return None
         for enricher in self.enrichers:
             enricher.enrich(doc)
@@ -460,7 +477,7 @@ def build_bridge(args: argparse.Namespace, *, indexer_factory: Callable[..., Any
         interpreter=interpreter,
         pipeline_on_missing=args.pipeline_on_missing,
         dlq=dlq,
-        metrics=Metrics(dlq_path=args.dlq_path),
+        metrics=Metrics(dlq_path=args.dlq_path, prefixe=METRICS_PREFIX),
     )
 
 

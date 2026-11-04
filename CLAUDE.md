@@ -15,35 +15,30 @@ le fichier est absent sur `dev`, le chercher sur `main`).
 
 Connecteur rsyslog asynchrone en Python : il reçoit les messages syslog via le module `omprog` de rsyslog, leur applique filtres, enrichissement et pipelines `.conf` Logstash **via la bibliothèque [PyStashTemplate](https://github.com/Mathilde-Team/PyStashTemplate)** (découpage #111), puis indexe dans OpenSearch avec une Dead Letter Queue pour les échecs permanents et un fingerprint déterministe pour l'idempotence.
 
-Ce qui relève de la sémantique Logstash (gabarits, filtres, interpréteur, enrichissement, grok, fingerprint, sorties) se développe et se documente dans PyStashTemplate ([FEATURES.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/FEATURES.md), [PATTERNS.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/PATTERNS.md)) ; les issues correspondantes s'ouvrent dans ce dépôt-là.
+Découpage #111 corrigé (#171) : seul `omprog`, propre à rsyslog, reste ici. Ce qui relève de la sémantique Logstash (gabarits, filtres, interpréteur, enrichissement, grok, fingerprint, sorties) et de la livraison (indexer, DLQ, métriques, options de connexion OpenSearch) se développe et se documente dans PyStashTemplate ([FEATURES.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/FEATURES.md), [PATTERNS.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/PATTERNS.md)) ; les issues correspondantes s'ouvrent dans ce dépôt-là.
 
 ## Stack technique
 
 - Python >= 3.11, asyncio
-- pystashtemplate v0.2.0, tag git figé (gabarits, filtres, `.conf`, enrichissement GeoIP/DNS, sortie `OpenSearchOutput` — et leurs propres dépendances : logstash-pipeline-parser, geoip2/maxminddb, ua-parser, lxml, dnspython…)
-- prometheus-client (métriques `/metrics`)
+- pystashtemplate v0.3.0, tag git figé (gabarits, filtres, `.conf`, enrichissement GeoIP/DNS, sorties, `indexer`, `dlq`, `metrics`, `opensearchconf` — et leurs propres dépendances : logstash-pipeline-parser, geoip2/maxminddb, ua-parser, lxml, dnspython, prometheus-client…)
 - loguru (journalisation)
 
 ## Architecture des modules
 
 ```
 src/
-├── omprog.py          Point d'entrée asyncio (rsyslog omprog) — dépend de tous les modules ci-dessous + pystashtemplate
-├── i18n.py            Domaine gettext `rsyslogstach` — dépend de pystashtemplate.tracing
-├── opensearchconf.py  Connexion OpenSearch lue dans output { opensearch { … } } (#125) — dépend de pystashtemplate.tracing
-├── dlq.py             Ré-export de pystashtemplate.dlq (LocalDeadLetterQueue, parse_size, parse_duration)
-├── metrics.py         Metrics Prometheus, endpoint /metrics (#35) — dépend de i18n
-└── indexer.py         OpenSearchIndexer — délègue à pystashtemplate.outputs.opensearch (#160) — dépend de dlq, i18n
+├── omprog.py   Point d'entrée asyncio (protocole rsyslog omprog) — dépend de i18n + pystashtemplate
+└── i18n.py     Domaine gettext `rsyslogstach` — dépend de pystashtemplate.tracing
 ```
+
+`indexer`, `dlq`, `metrics` et `opensearchconf` sont importés de `pystashtemplate.*` (voir [docs/indexation-metriques.md](https://github.com/Mathilde-Team/PyStashTemplate/blob/main/docs/indexation-metriques.md)).
 
 ### Graphe de dépendances (acyclique, vérifié par tests/test_no_cross_imports.py)
 
 ```
 pystashtemplate (dépendance externe)
     ↑
-i18n, opensearchconf, dlq
-    ↑
-metrics (→ i18n), indexer (→ dlq, i18n)
+i18n
     ↑
 omprog (point d'entrée)
 ```
@@ -52,13 +47,13 @@ omprog (point d'entrée)
 
 - **Traçabilité systématique** : toute fonction de `src/` est décorée par `@traced` de `pystashtemplate.tracing` (entrée + sortie, y compris exceptions). Jamais d'arguments dans les logs (identifiants OpenSearch, clé HMAC).
 - **Absence de dépendances circulaires** : vérifiée mécaniquement par `tests/test_no_cross_imports.py` (analyse `ast`, pas de simple relecture).
-- **Tests sans pytest-asyncio** : `asyncio.run()` direct (voir `test_dlq.py`, `test_omprog.py`).
+- **Tests sans pytest-asyncio** : `asyncio.run()` direct (voir `test_omprog.py`).
 - **Secrets en environnement** : `pystashtemplate.util.opensearch_auth_from_env()` lit `OPENSEARCH_USER`/`OPENSEARCH_PASSWORD` (jamais en argument CLI, visible via `ps aux`).
 - **Package à plat** : `src/*.py` sans `__init__.py`, importé via `sys.path` (voir `conftest.py`).
 
 ## Historique des sessions
 
-Les sessions 5 à 24 portent sur des modules partis dans PyStashTemplate au découpage #111 (templates, enrichment, interpreter, filters, fingerprint, util, tracing).
+Les sessions 3 et 5 à 24 portent sur des modules partis dans PyStashTemplate au découpage #111 et à sa correction #171 (templates, enrichment, interpreter, filters, fingerprint, util, tracing, indexer, dlq).
 
 - **Session 1** — Démarrage, choix de la stack
 - **Session 2** — Compatibilité schéma/filtres Logstash
