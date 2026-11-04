@@ -1,6 +1,6 @@
 [project]
 name = "rsyslogstach"
-version = "0.10.1"
+version = "0.10.2"
 description = "Pont rsyslog -> omprog (asyncio) -> OpenSearch, compatible schéma/filtres Logstash"
 license = "GPL-3.0-or-later"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ dependencies = [
     "prometheus-client==0.26.0",  # métriques /metrics (issue #35), version figée
     # Découpage #111 : la sémantique Logstash (gabarits, filtres, interprétation
     # des .conf, enrichissement) vit désormais dans PyStashTemplate, dépendance
-    # figée sur le tag v0.1.0 — comme tout autre outil (…beat) pourrait le faire.
+    # figée sur un tag (v0.2.0) — comme tout autre outil (…beat) pourrait le faire.
     "pystashtemplate @ git+https://github.com/Mathilde-Team/PyStashTemplate.git@v0.2.0",
 ]
 
