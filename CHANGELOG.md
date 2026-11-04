@@ -4,6 +4,8 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Les numéros 
 
 ## [Non publié]
 
+## [0.10.2] - 2026-11-04
+
 ### Modifié
 - **Documentation réduite au connecteur (#111, question du 03/11)** : la
   documentation de la sémantique Logstash a rejoint le code dans
